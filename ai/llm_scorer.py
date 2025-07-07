@@ -121,17 +121,26 @@ class LLMScorer:
         if scored_examples:
             prompt_parts.append("Example scored names:")
             for name, score in scored_examples[:10]:  # Limit to top 10 examples
-                prompt_parts.append(f"- {name}: {score:.1f}")
+                prompt_parts.append(f"- {name}: {int(score)}")
         
         # Add instructions exactly as provided
         prompt_parts.append(instructions)
         
         # Add names to score
         prompt_parts.append("Names to score:")
+        names_section = []
         for i, name in enumerate(names, 1):
-            prompt_parts.append(f"{i}. {name}")
+            names_section.append(f"{i}. {name}")
         
-        return "\n\n".join(prompt_parts)
+        # Join everything with double newlines except the names list
+        main_parts = prompt_parts[:-1]  # All parts except "Names to score:"
+        main_prompt = "\n\n".join(main_parts)
+        
+        # Add the names section with single newlines
+        names_header = prompt_parts[-1]  # "Names to score:"
+        names_list = "\n".join(names_section)
+        
+        return f"{main_prompt}\n\n{names_header}\n{names_list}"
     
     def _parse_scores(self, response: str, names: List[str]) -> List[Tuple[str, float]]:
         """Parse LLM response to extract scores"""

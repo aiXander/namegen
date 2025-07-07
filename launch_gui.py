@@ -11,7 +11,7 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 try:
-    from gui import main
+    from gui.gui import main
     main()
 except ImportError as e:
     print(f"Error importing GUI: {e}")

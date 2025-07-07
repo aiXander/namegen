@@ -11,8 +11,8 @@ import threading
 import atexit
 from typing import Dict, List, Any
 from markov_namegen import MarkovNameGenerator
-from name_generator import NameGenerator
-from llm_scorer import LLMScorer
+from markov.name_generator import NameGenerator
+from ai.llm_scorer import LLMScorer
 
 
 class WordListViewModal:
@@ -1337,7 +1337,12 @@ class MarkovNameGeneratorGUI:
                 # Delete button on the left
                 delete_button = ttk.Button(name_frame, text="Delete", 
                                          command=lambda n=name: self.delete_saved_name(n))
-                delete_button.pack(side='left', padx=(0, 10))
+                delete_button.pack(side='left', padx=(0, 5))
+                
+                # Edit button next to delete
+                edit_button = ttk.Button(name_frame, text="Edit", 
+                                       command=lambda n=name, r=rating: self.edit_saved_score(n, r))
+                edit_button.pack(side='left', padx=(0, 10))
                 
                 # Name in the middle with larger font
                 name_label = ttk.Label(name_frame, text=name, 
@@ -1350,7 +1355,7 @@ class MarkovNameGeneratorGUI:
                                        font=('Arial', 11))
                 rating_label.pack(side='right')
                 
-                self.saved_result_widgets.extend([name_frame, delete_button, name_label, rating_label])
+                self.saved_result_widgets.extend([name_frame, delete_button, edit_button, name_label, rating_label])
     
     def clear_saved_results(self):
         """Clear all saved ratings"""
@@ -1367,6 +1372,25 @@ class MarkovNameGeneratorGUI:
         """Delete a specific name from saved results"""
         if name in self.saved_ratings:
             del self.saved_ratings[name]
+            self.save_ratings_to_file()
+            self.refresh_saved_results()
+            
+            # Refresh results display if available to update star colors
+            if hasattr(self, 'last_results'):
+                self.display_results_with_ratings(self.last_results)
+    
+    def edit_saved_score(self, name, current_rating):
+        """Edit the score for a saved name"""
+        new_rating = simpledialog.askinteger(
+            "Edit Score", 
+            f"Enter new score for '{name}' (1-5):\nCurrent score: {current_rating}",
+            minvalue=1, 
+            maxvalue=5,
+            initialvalue=current_rating
+        )
+        
+        if new_rating is not None and new_rating != current_rating:
+            self.saved_ratings[name] = new_rating
             self.save_ratings_to_file()
             self.refresh_saved_results()
             

@@ -4,7 +4,7 @@ import csv
 import yaml
 import random
 from typing import List, Set, Dict, Any
-from name_generator import NameGenerator
+from markov.name_generator import NameGenerator
 
 
 def load_word_list(filepath: str) -> List[str]:

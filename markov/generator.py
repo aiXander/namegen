@@ -1,6 +1,6 @@
 import random
 from typing import List, Optional
-from markov_model import MarkovModel
+from .markov_model import MarkovModel
 
 
 class Generator:
