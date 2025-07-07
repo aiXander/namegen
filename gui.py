@@ -33,6 +33,7 @@ class WordListViewModal:
         self.popup = tk.Toplevel(self.parent)
         self.popup.title(f"View Word List - {self.word_list_name}")
         self.popup.geometry("600x400")
+        self.popup.configure(bg='white')
         
         # Create control frame
         control_frame = ttk.Frame(self.popup)
@@ -47,7 +48,10 @@ class WordListViewModal:
                        value="random", command=self.refresh_view).pack(side='left', padx=2)
         
         # Create text widget
-        self.text_widget = scrolledtext.ScrolledText(self.popup, wrap=tk.WORD)
+        self.text_widget = scrolledtext.ScrolledText(self.popup, wrap=tk.WORD,
+                                                    bg='white', fg='black', 
+                                                    selectbackground='#4a90e2',
+                                                    selectforeground='white')
         self.text_widget.pack(fill='both', expand=True, padx=10, pady=10)
         
         # Load and display content
@@ -99,6 +103,9 @@ class MarkovNameGeneratorGUI:
         self.root.title("Markov Name Generator")
         self.root.geometry("800x700")
         
+        # Apply dark theme
+        self.setup_dark_theme()
+        
         # Flag to track if application is being destroyed
         self.is_closing = False
         
@@ -132,6 +139,56 @@ class MarkovNameGeneratorGUI:
         
         # Load latest state if available
         self.load_latest_state()
+        
+    def setup_dark_theme(self):
+        """Configure light theme for the entire GUI"""
+        # Configure root window
+        self.root.configure(bg='white')
+        
+        # Configure ttk style
+        style = ttk.Style()
+        
+        # Configure colors for ttk widgets
+        style.theme_use('clam')
+        
+        # Configure ttk styles
+        style.configure('TFrame', background='white')
+        style.configure('TLabel', background='white', foreground='black')
+        style.configure('TButton', background='#f0f0f0', foreground='black', borderwidth=1, relief='solid')
+        style.configure('TCheckbutton', background='white', foreground='black', focuscolor='none')
+        style.configure('TRadiobutton', background='white', foreground='black', focuscolor='none')
+        style.configure('TScale', background='white', troughcolor='#e0e0e0', borderwidth=0)
+        style.configure('TEntry', fieldbackground='white', foreground='black', borderwidth=1, insertcolor='black')
+        style.configure('TCombobox', fieldbackground='white', foreground='black', borderwidth=1)
+        style.configure('TScrollbar', background='#d0d0d0', troughcolor='white', borderwidth=0)
+        style.configure('TNotebook', background='white', borderwidth=0)
+        style.configure('TNotebook.Tab', background='#f0f0f0', foreground='black', padding=(12, 8))
+        style.configure('TLabelframe', background='white', foreground='black', borderwidth=1, relief='solid')
+        style.configure('TLabelframe.Label', background='white', foreground='black')
+        style.configure('TProgressbar', background='#4a90e2', troughcolor='#e0e0e0', borderwidth=0)
+        
+        # Configure hover and active states
+        style.map('TButton',
+                  background=[('active', '#e0e0e0'), ('pressed', '#d0d0d0')])
+        style.map('TCheckbutton',
+                  background=[('active', 'white')])
+        style.map('TRadiobutton',
+                  background=[('active', 'white')])
+        style.map('TNotebook.Tab',
+                  background=[('selected', '#e0e0e0'), ('active', '#f5f5f5')])
+        
+        # Configure tk widgets (non-ttk)
+        self.root.option_add('*Background', 'white')
+        self.root.option_add('*Foreground', 'black')
+        self.root.option_add('*selectBackground', '#4a90e2')
+        self.root.option_add('*selectForeground', 'white')
+        self.root.option_add('*Text.Background', 'white')
+        self.root.option_add('*Text.Foreground', 'black')
+        self.root.option_add('*Entry.Background', 'white')
+        self.root.option_add('*Entry.Foreground', 'black')
+        self.root.option_add('*Listbox.Background', 'white')
+        self.root.option_add('*Listbox.Foreground', 'black')
+        self.root.option_add('*Canvas.Background', 'white')
         
     def load_config(self) -> Dict[str, Any]:
         """Load configuration from YAML file"""
@@ -294,8 +351,10 @@ class MarkovNameGeneratorGUI:
                 star_text = "★" if is_filled else "☆"
                 star_button = tk.Button(rating_frame, text=star_text, 
                                       command=lambda wl=word_list, r=star: self.rate_word_list(wl, r),
-                                      bg='gold' if is_filled else 'lightgray',
-                                      relief='flat', font=('Arial', 12))
+                                      bg='#DAA520' if is_filled else '#f0f0f0',
+                                      fg='black', relief='flat', font=('Arial', 12),
+                                      activebackground='#e0e0e0', activeforeground='black',
+                                      borderwidth=0)
                 star_button.pack(side='left', padx=1)
                 self.word_list_widgets.append(star_button)
             
@@ -431,10 +490,13 @@ class MarkovNameGeneratorGUI:
         desc_frame = ttk.LabelFrame(main_frame, text="Description")
         desc_frame.pack(fill='both', expand=True, padx=5, pady=5)
         
-        ttk.Label(desc_frame, text="What are these names for? (e.g., company, website, product)").pack(anchor='w', padx=5, pady=5)
+        ttk.Label(desc_frame, text="What are these names for? (e.g., company, website, product)").pack(anchor='e', padx=5, pady=5)
         
         # Create scrolled text widget for description
-        self.ai_description_text = scrolledtext.ScrolledText(desc_frame, height=4, width=70)
+        self.ai_description_text = scrolledtext.ScrolledText(desc_frame, height=4, width=70,
+                                                            bg='white', fg='black', 
+                                                            selectbackground='#4a90e2',
+                                                            selectforeground='white')
         self.ai_description_text.pack(fill='both', expand=True, padx=5, pady=5)
         
         # Instructions section
@@ -445,7 +507,10 @@ class MarkovNameGeneratorGUI:
         default_instructions = self.config.get('llm', {}).get('default_instructions', 
             "Based on the provided description and scored names, score the following generated name ideas on a scale of 0.0 to 5.0, where 5.0 is excellent and 0.0 is poor.")
         
-        self.ai_instructions_text = scrolledtext.ScrolledText(instructions_frame, height=3, width=70)
+        self.ai_instructions_text = scrolledtext.ScrolledText(instructions_frame, height=3, width=70,
+                                                            bg='white', fg='black', 
+                                                            selectbackground='#4a90e2',
+                                                            selectforeground='white')
         self.ai_instructions_text.pack(fill='both', expand=True, padx=5, pady=5)
         self.ai_instructions_text.insert('1.0', default_instructions)
         
@@ -457,10 +522,17 @@ class MarkovNameGeneratorGUI:
         model_frame = ttk.Frame(settings_frame)
         model_frame.pack(fill='x', padx=5, pady=5)
         
-        ttk.Label(model_frame, text="LLM Model:").pack(side='left', padx=5)
+        # Left side for label (50% width)
+        label_frame = ttk.Frame(model_frame)
+        label_frame.pack(side='left', fill='x', expand=True)
+        ttk.Label(label_frame, text="LLM Model:").pack(side='right', padx=5)
+        
+        # Right side for control (50% width)
+        control_frame = ttk.Frame(model_frame)
+        control_frame.pack(side='right', fill='x', expand=True)
         
         self.ai_model_var = tk.StringVar(value=self.config.get('llm', {}).get('model', 'gpt-3.5-turbo'))
-        model_dropdown = ttk.Combobox(model_frame, textvariable=self.ai_model_var, 
+        model_dropdown = ttk.Combobox(control_frame, textvariable=self.ai_model_var, 
                                      values=LLMScorer.get_available_models(), 
                                      state='readonly', width=25)
         model_dropdown.pack(side='left', padx=5)
@@ -469,53 +541,95 @@ class MarkovNameGeneratorGUI:
         slider_frame = ttk.Frame(settings_frame)
         slider_frame.pack(fill='x', padx=5, pady=5)
         
-        ttk.Label(slider_frame, text="Names to generate:").pack(side='left', padx=5)
+        # Left side for label (50% width)
+        slider_label_frame = ttk.Frame(slider_frame)
+        slider_label_frame.pack(side='left', fill='x', expand=True)
+        ttk.Label(slider_label_frame, text="Max names to score:").pack(side='right', padx=5)
+        
+        # Right side for control (50% width)
+        slider_control_frame = ttk.Frame(slider_frame)
+        slider_control_frame.pack(side='right', fill='x', expand=True)
         
         self.ai_gen_count_var = tk.IntVar(value=20)
-        gen_count_slider = ttk.Scale(slider_frame, from_=1, to=100, orient='horizontal',
+        gen_count_slider = ttk.Scale(slider_control_frame, from_=1, to=100, orient='horizontal',
                                     variable=self.ai_gen_count_var, length=200)
         gen_count_slider.pack(side='left', padx=5)
         
-        self.ai_gen_count_label = ttk.Label(slider_frame, text="20")
+        self.ai_gen_count_label = ttk.Label(slider_control_frame, text="20")
         self.ai_gen_count_label.pack(side='left', padx=5)
         
         # Update label when slider changes
         gen_count_slider.configure(command=lambda v: self.ai_gen_count_label.configure(text=str(int(float(v)))))
         
+        # Max chunk size slider
+        chunk_frame = ttk.Frame(settings_frame)
+        chunk_frame.pack(fill='x', padx=5, pady=5)
+        
+        # Left side for label (50% width)
+        chunk_label_frame = ttk.Frame(chunk_frame)
+        chunk_label_frame.pack(side='left', fill='x', expand=True)
+        ttk.Label(chunk_label_frame, text="Max chunk size:").pack(side='right', padx=5)
+        
+        # Right side for control (50% width)
+        chunk_control_frame = ttk.Frame(chunk_frame)
+        chunk_control_frame.pack(side='right', fill='x', expand=True)
+        
+        self.ai_chunk_size_var = tk.IntVar(value=self.config.get('llm', {}).get('max_chunk_size', 10))
+        chunk_size_slider = ttk.Scale(chunk_control_frame, from_=1, to=50, orient='horizontal',
+                                     variable=self.ai_chunk_size_var, length=200)
+        chunk_size_slider.pack(side='left', padx=5)
+        
+        self.ai_chunk_size_label = ttk.Label(chunk_control_frame, text=str(self.ai_chunk_size_var.get()))
+        self.ai_chunk_size_label.pack(side='left', padx=5)
+        
+        # Update label when slider changes
+        chunk_size_slider.configure(command=lambda v: self.ai_chunk_size_label.configure(text=str(int(float(v)))))
+        
         # Progress bar
         progress_frame = ttk.Frame(settings_frame)
         progress_frame.pack(fill='x', padx=5, pady=5)
         
-        ttk.Label(progress_frame, text="Progress:").pack(side='left', padx=5)
+        # Left side for label (50% width)
+        progress_label_frame = ttk.Frame(progress_frame)
+        progress_label_frame.pack(side='left', fill='x', expand=True)
+        ttk.Label(progress_label_frame, text="Progress:").pack(side='right', padx=5)
+        
+        # Right side for control (50% width)
+        progress_control_frame = ttk.Frame(progress_frame)
+        progress_control_frame.pack(side='right', fill='x', expand=True)
         
         self.ai_progress_var = tk.DoubleVar()
-        self.ai_progress_bar = ttk.Progressbar(progress_frame, variable=self.ai_progress_var, 
+        self.ai_progress_bar = ttk.Progressbar(progress_control_frame, variable=self.ai_progress_var, 
                                               maximum=100, length=300)
         self.ai_progress_bar.pack(side='left', padx=5)
         
-        self.ai_progress_label = ttk.Label(progress_frame, text="Ready")
+        self.ai_progress_label = ttk.Label(progress_control_frame, text="Ready")
         self.ai_progress_label.pack(side='left', padx=5)
         
         # Generate button
         button_frame = ttk.Frame(settings_frame)
         button_frame.pack(fill='x', padx=5, pady=10)
         
-        self.ai_generate_button = ttk.Button(button_frame, text="AI Generate", 
-                                           command=self.ai_generate_names,
+        self.ai_generate_button = ttk.Button(button_frame, text="AI Score", 
+                                           command=self.ai_score_names,
                                            style='Accent.TButton')
         self.ai_generate_button.pack(side='left', padx=5)
         
         # Initialize LLM scorer
         self.llm_scorer = None
         
-    def ai_generate_names(self):
-        """Generate names using Markov model and score them with LLM"""
+    def ai_score_names(self):
+        """Score existing names in the Results panel with LLM"""
         try:
+            # Check if there are existing results to score
+            if not hasattr(self, 'last_results') or not self.last_results:
+                messagebox.showwarning("Warning", "No existing results to score. Please generate names first in the Results tab.")
+                return
+            
             # Validate inputs
             description = self.ai_description_text.get('1.0', tk.END).strip()
             instructions = self.ai_instructions_text.get('1.0', tk.END).strip()
             model = self.ai_model_var.get()
-            n_names = self.ai_gen_count_var.get()
             
             if not description:
                 messagebox.showwarning("Warning", "Please provide a description for the names.")
@@ -525,91 +639,35 @@ class MarkovNameGeneratorGUI:
                 messagebox.showwarning("Warning", "Please provide instructions for the LLM.")
                 return
             
-            # Update config from GUI
-            self.update_config_from_gui()
-            
-            # Check if any word lists are selected
-            selected_sources = []
-            for i, var in enumerate(self.word_list_vars):
-                if var.get():
-                    selected_sources.append(self.word_list_mapping[i])
-            if not selected_sources:
-                messagebox.showwarning("Warning", "Please select at least one word list!")
-                return
-            
-            # Disable generate button during processing
+            # Disable score button during processing
             self.ai_generate_button.configure(state='disabled')
             
             # Reset progress
             self.ai_progress_var.set(0)
-            self.ai_progress_label.configure(text="Generating names...")
+            self.ai_progress_label.configure(text="Initializing LLM scorer...")
             
-            # Step 1: Generate names using Markov model
-            self.update_progress(0, "Generating names with Markov model...")
-            
-            # Check if we can reuse cached generator
-            current_word_list_hash = self._get_word_list_hash()
-            current_model_params_hash = self._get_model_params_hash()
-            
-            if (self.cached_generator is not None and
-                self.cached_word_list_hash == current_word_list_hash and
-                self.cached_model_params_hash == current_model_params_hash):
-                # Use cached generator
-                self.generator = self.cached_generator
-                print("Using cached markov model")
-            else:
-                # Create new generator
-                print("Creating new markov model")
-                self.generator = MarkovNameGenerator()
-                self.generator.config = self.config
-                
-                # Load training data
-                self.generator.training_words = self.generator._load_training_data()
-                
-                # Recreate name generator with new settings
-                model_config = self.config['model']
-                self.generator.generator = NameGenerator(
-                    data=self.generator.training_words,
-                    order=model_config['order'],
-                    prior=model_config['prior'],
-                    backoff=model_config['backoff']
-                )
-                
-                # Cache the generator and hashes
-                self.cached_generator = self.generator
-                self.cached_word_list_hash = current_word_list_hash
-                self.cached_model_params_hash = current_model_params_hash
-            
-            # Temporarily update n_words for AI generation
-            original_n_words = self.config['generation']['n_words']
-            self.config['generation']['n_words'] = n_names
-            
-            # Generate names
-            names = self.generator.generate_names()
-            
-            # Restore original n_words
-            self.config['generation']['n_words'] = original_n_words
-            
-            self.update_progress(30, "Names generated. Initializing LLM scorer...")
-            
-            # Step 2: Initialize LLM scorer
-            max_chunk_size = self.config.get('llm', {}).get('max_chunk_size', 10)
+            # Step 1: Initialize LLM scorer
+            self.update_progress(10, "Initializing LLM scorer...")
+            max_chunk_size = self.ai_chunk_size_var.get()
             self.llm_scorer = LLMScorer(model=model, max_chunk_size=max_chunk_size)
             
             # Get scored examples from saved ratings
             scored_examples = self.get_scored_examples()
             
-            self.update_progress(40, "Scoring names with LLM...")
+            self.update_progress(20, "Scoring existing names with LLM...")
             
-            # Step 3: Score names with LLM
+            # Step 2: Score existing names with LLM
+            max_names = self.ai_gen_count_var.get()
+            names_to_score = self.last_results[:max_names]  # Limit to max names
+            
             def progress_callback(progress):
-                # Map LLM progress to our overall progress (40-90%)
-                overall_progress = 40 + (progress * 50)
+                # Map LLM progress to our overall progress (20-90%)
+                overall_progress = 20 + (progress * 70)
                 self.ai_progress_var.set(overall_progress)
                 self.root.update_idletasks()
             
             scored_names = self.llm_scorer.score_names(
-                names=names,
+                names=names_to_score,
                 description=description,
                 scored_examples=scored_examples,
                 instructions=instructions,
@@ -618,7 +676,7 @@ class MarkovNameGeneratorGUI:
             
             self.update_progress(95, "Sorting results...")
             
-            # Step 4: Sort by LLM scores (highest first)
+            # Step 3: Sort by LLM scores (highest first)
             scored_names.sort(key=lambda x: x[1], reverse=True)
             
             self.update_progress(100, "Complete!")
@@ -631,10 +689,10 @@ class MarkovNameGeneratorGUI:
             self.last_ai_results = scored_names
             
         except Exception as e:
-            messagebox.showerror("Error", f"Failed to generate AI-scored names: {str(e)}")
-            print(f"AI generation error: {str(e)}")
+            messagebox.showerror("Error", f"Failed to score names with AI: {str(e)}")
+            print(f"AI scoring error: {str(e)}")
         finally:
-            # Re-enable generate button
+            # Re-enable score button
             self.ai_generate_button.configure(state='normal')
     
     def update_progress(self, value, message):
@@ -656,60 +714,12 @@ class MarkovNameGeneratorGUI:
     
     def display_ai_results(self, scored_names):
         """Display AI-generated results with scores in the Results tab"""
-        # Clear previous results
-        for widget in self.rating_widgets:
-            widget.destroy()
-        self.rating_widgets = []
+        # Convert scored tuples to list of names with separate AI scores
+        names = [name for name, score in scored_names]
+        ai_scores = {name: score for name, score in scored_names}
         
-        if not scored_names:
-            no_results_label = ttk.Label(self.results_frame, 
-                                       text="No names generated. Try adjusting your parameters.")
-            no_results_label.pack(pady=20)
-            self.rating_widgets.append(no_results_label)
-            return
-        
-        # Header
-        header_label = ttk.Label(self.results_frame, 
-                               text=f"Generated {len(scored_names)} AI-scored names:", 
-                               font=('Arial', 12, 'bold'))
-        header_label.pack(pady=10)
-        self.rating_widgets.append(header_label)
-        
-        # Display each name with LLM score and star rating
-        for i, (name, llm_score) in enumerate(scored_names, 1):
-            name_frame = ttk.Frame(self.results_frame)
-            name_frame.pack(fill='x', padx=20, pady=5)
-            
-            # Name label with LLM score
-            name_text = f"{i:2d}. {name} (AI: {llm_score:.1f})"
-            name_label = ttk.Label(name_frame, text=name_text, font=('Arial', 11))
-            name_label.pack(side='left')
-            
-            # Star rating (for user feedback)
-            rating_frame = ttk.Frame(name_frame)
-            rating_frame.pack(side='right', padx=10)
-            
-            # Create star rating for this name
-            star_vars = []
-            for j in range(5):
-                star_var = tk.BooleanVar()
-                star_vars.append(star_var)
-                star_button = ttk.Checkbutton(rating_frame, text="★", variable=star_var,
-                                            command=lambda n=name, idx=j, vars=star_vars: 
-                                            self.on_star_click(n, idx, vars))
-                star_button.pack(side='left', padx=1)
-                self.rating_widgets.append(star_button)
-            
-            # Load existing rating if available
-            if name in self.saved_ratings:
-                existing_rating = self.saved_ratings[name]
-                for j in range(min(5, int(existing_rating))):
-                    star_vars[j].set(True)
-            
-            self.rating_widgets.extend([name_frame, name_label, rating_frame])
-        
-        # Update canvas scroll region
-        self.results_canvas.configure(scrollregion=self.results_canvas.bbox("all"))
+        # Use the unified display function with AI scores
+        self.display_results_with_ratings(names, ai_scores=ai_scores, header_text="AI-scored names")
         
     def setup_results_tab(self, notebook):
         """Set up results display tab with star ratings"""
@@ -820,6 +830,7 @@ class MarkovNameGeneratorGUI:
             if not self.config.get('llm'):
                 self.config['llm'] = {}
             self.config['llm']['model'] = self.ai_model_var.get()
+            self.config['llm']['max_chunk_size'] = self.ai_chunk_size_var.get()
             try:
                 self.config['llm']['default_instructions'] = self.ai_instructions_text.get('1.0', tk.END).strip()
             except (tk.TclError, AttributeError):
@@ -959,6 +970,9 @@ class MarkovNameGeneratorGUI:
                 if 'llm' in self.config:
                     if 'model' in self.config['llm']:
                         self.ai_model_var.set(self.config['llm']['model'])
+                    if 'max_chunk_size' in self.config['llm']:
+                        self.ai_chunk_size_var.set(self.config['llm']['max_chunk_size'])
+                        self.ai_chunk_size_label.configure(text=str(self.config['llm']['max_chunk_size']))
                     if 'default_instructions' in self.config['llm']:
                         self.ai_instructions_text.delete('1.0', tk.END)
                         self.ai_instructions_text.insert('1.0', self.config['llm']['default_instructions'])
@@ -1108,6 +1122,7 @@ class MarkovNameGeneratorGUI:
                 self.popup = tk.Toplevel(self.parent)
                 self.popup.title("Raw Training Data")
                 self.popup.geometry("600x400")
+                self.popup.configure(bg='white')
                 
                 # Create control frame
                 control_frame = ttk.Frame(self.popup)
@@ -1122,7 +1137,10 @@ class MarkovNameGeneratorGUI:
                                value="random", command=self.refresh_view).pack(side='left', padx=2)
                 
                 # Create text widget
-                self.text_widget = scrolledtext.ScrolledText(self.popup, wrap=tk.WORD)
+                self.text_widget = scrolledtext.ScrolledText(self.popup, wrap=tk.WORD,
+                                                            bg='white', fg='black', 
+                                                            selectbackground='#4a90e2',
+                                                            selectforeground='white')
                 self.text_widget.pack(fill='both', expand=True, padx=10, pady=10)
                 
                 # Load and display content
@@ -1173,8 +1191,8 @@ class MarkovNameGeneratorGUI:
         modal = TrainingDataModal(self.root, selected_sources)
         modal.show()
     
-    def display_results_with_ratings(self, names):
-        """Display results with star rating controls"""
+    def display_results_with_ratings(self, names, ai_scores=None, header_text=None):
+        """Display results with star rating controls and optional AI scores"""
         # Clear previous results
         for widget in self.rating_widgets:
             widget.destroy()
@@ -1188,11 +1206,38 @@ class MarkovNameGeneratorGUI:
             return
         
         # Header
+        if header_text:
+            header_text = f"Generated {len(names)} {header_text}:"
+        else:
+            header_text = f"Generated {len(names)} names:"
+        
         header_label = ttk.Label(self.results_frame, 
-                               text=f"Generated {len(names)} names:", 
+                               text=header_text, 
                                font=('Arial', 12, 'bold'))
         header_label.pack(pady=10)
         self.rating_widgets.append(header_label)
+        
+        # Column headers if AI scores are present
+        if ai_scores:
+            headers_frame = ttk.Frame(self.results_frame)
+            headers_frame.pack(fill='x', padx=20, pady=5)
+            
+            # Name column header
+            name_header = ttk.Label(headers_frame, text="Name", 
+                                  font=('Arial', 11, 'bold'))
+            name_header.pack(side='left')
+            
+            # AI Score column header
+            ai_score_header = ttk.Label(headers_frame, text="AI Score", 
+                                      font=('Arial', 11, 'bold'))
+            ai_score_header.pack(side='left', padx=(200, 0))
+            
+            # User Rating column header
+            user_rating_header = ttk.Label(headers_frame, text="User Rating", 
+                                         font=('Arial', 11, 'bold'))
+            user_rating_header.pack(side='right')
+            
+            self.rating_widgets.extend([headers_frame, name_header, ai_score_header, user_rating_header])
         
         # Display each name with star rating
         for i, name in enumerate(names, 1):
@@ -1203,6 +1248,19 @@ class MarkovNameGeneratorGUI:
             name_label = ttk.Label(name_frame, text=f"{i:2d}. {name}", 
                                  font=('Arial', 11))
             name_label.pack(side='left')
+            
+            # AI Score label (if present)
+            if ai_scores and name in ai_scores:
+                score_val = ai_scores[name]
+                # Format as integer if it's a whole number, otherwise single decimal
+                if score_val == int(score_val):
+                    score_text = f"{int(score_val):>4}"
+                else:
+                    score_text = f"{score_val:>4.1f}"
+                ai_score_label = ttk.Label(name_frame, text=score_text, 
+                                         font=('Arial', 11, 'bold'), foreground='blue')
+                ai_score_label.pack(side='left', padx=(200, 0))
+                self.rating_widgets.append(ai_score_label)
             
             # Star rating buttons
             rating_frame = ttk.Frame(name_frame)
@@ -1218,8 +1276,10 @@ class MarkovNameGeneratorGUI:
                 star_text = "★" if is_filled else "☆"
                 star_button = tk.Button(rating_frame, text=star_text, 
                                       command=lambda n=name, r=star: self.rate_name(n, r),
-                                      bg='gold' if is_filled else 'lightgray',
-                                      relief='flat', font=('Arial', 14))
+                                      bg='#DAA520' if is_filled else '#f0f0f0',
+                                      fg='black', relief='flat', font=('Arial', 14),
+                                      activebackground='#e0e0e0', activeforeground='black',
+                                      borderwidth=0)
                 star_button.pack(side='left', padx=1)
                 self.rating_widgets.append(star_button)
             
@@ -1228,6 +1288,9 @@ class MarkovNameGeneratorGUI:
             rating_label.pack(side='left', padx=5)
             
             self.rating_widgets.extend([name_frame, name_label, rating_frame, rating_label])
+        
+        # Update canvas scroll region
+        self.results_canvas.configure(scrollregion=self.results_canvas.bbox("all"))
     
     def rate_name(self, name, rating):
         """Rate a name with the given number of stars"""
@@ -1269,20 +1332,25 @@ class MarkovNameGeneratorGUI:
         for name, rating in sorted_names:
             if rating > 0:  # Only show rated names
                 name_frame = ttk.Frame(self.saved_results_frame)
-                name_frame.pack(fill='x', padx=20, pady=2)
+                name_frame.pack(fill='x', padx=10, pady=2)
                 
-                # Name and rating
-                stars = "★" * rating + "☆" * (5 - rating)
-                name_label = ttk.Label(name_frame, text=f"{name:<20} {stars} ({rating}/5)", 
-                                     font=('Arial', 11))
-                name_label.pack(side='left')
-                
-                # Delete button
+                # Delete button on the left
                 delete_button = ttk.Button(name_frame, text="Delete", 
                                          command=lambda n=name: self.delete_saved_name(n))
-                delete_button.pack(side='right')
+                delete_button.pack(side='left', padx=(0, 10))
                 
-                self.saved_result_widgets.extend([name_frame, name_label, delete_button])
+                # Name in the middle with larger font
+                name_label = ttk.Label(name_frame, text=name, 
+                                     font=('Arial', 16, 'bold'))
+                name_label.pack(side='left')
+                
+                # Rating on the right
+                stars = "★" * rating + "☆" * (5 - rating)
+                rating_label = ttk.Label(name_frame, text=f"{stars} ({rating}/5)", 
+                                       font=('Arial', 11))
+                rating_label.pack(side='right')
+                
+                self.saved_result_widgets.extend([name_frame, delete_button, name_label, rating_label])
     
     def clear_saved_results(self):
         """Clear all saved ratings"""
@@ -1356,8 +1424,10 @@ class MarkovNameGeneratorGUI:
                 star_text = "\u2605" if is_filled else "\u2606"
                 star_button = tk.Button(rating_frame, text=star_text, 
                                       command=lambda wl=word_list, r=star: self.rate_word_list(wl, r),
-                                      bg='gold' if is_filled else 'lightgray',
-                                      relief='flat', font=('Arial', 12))
+                                      bg='#DAA520' if is_filled else '#f0f0f0',
+                                      fg='black', relief='flat', font=('Arial', 12),
+                                      activebackground='#e0e0e0', activeforeground='black',
+                                      borderwidth=0)
                 star_button.pack(side='left', padx=1)
                 self.word_list_widgets.append(star_button)
             
@@ -1443,6 +1513,7 @@ class MarkovNameGeneratorGUI:
                 gui_state['ai_description'] = self.ai_description_text.get('1.0', tk.END).strip()
                 gui_state['ai_instructions'] = self.ai_instructions_text.get('1.0', tk.END).strip()
                 gui_state['ai_gen_count'] = self.ai_gen_count_var.get()
+                gui_state['ai_chunk_size'] = self.ai_chunk_size_var.get()
                 gui_state['min_score'] = self.min_score_var.get()
                 gui_state['max_score'] = self.max_score_var.get()
             except (tk.TclError, AttributeError):
@@ -1498,6 +1569,10 @@ class MarkovNameGeneratorGUI:
                 if 'ai_gen_count' in gui_state:
                     self.ai_gen_count_var.set(gui_state['ai_gen_count'])
                     self.ai_gen_count_label.configure(text=str(gui_state['ai_gen_count']))
+                
+                if 'ai_chunk_size' in gui_state:
+                    self.ai_chunk_size_var.set(gui_state['ai_chunk_size'])
+                    self.ai_chunk_size_label.configure(text=str(gui_state['ai_chunk_size']))
                 
                 if 'min_score' in gui_state:
                     self.min_score_var.set(gui_state['min_score'])
@@ -1565,6 +1640,9 @@ class MarkovNameGeneratorGUI:
                 llm_config = self.config['llm']
                 if 'model' in llm_config:
                     self.ai_model_var.set(llm_config['model'])
+                if 'max_chunk_size' in llm_config:
+                    self.ai_chunk_size_var.set(llm_config['max_chunk_size'])
+                    self.ai_chunk_size_label.configure(text=str(llm_config['max_chunk_size']))
                     
         except Exception as e:
             print(f"Error updating GUI from config: {e}")

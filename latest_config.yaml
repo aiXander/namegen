@@ -7,19 +7,20 @@ config:
     ends_with: ''
     excludes: ''
     includes: ''
-    max_length: 12
+    max_length: 10
     max_time_per_name: 0.02
     min_length: 5
-    n_words: 30
+    n_words: 300
     regex_pattern: ''
     starts_with: ''
   llm:
-    default_instructions: Based on the provided description and scored names, score
-      the following generated name ideas on a scale of 0.0 to 5.0, where 5.0 is excellent
-      and 0.0 is poor. Consider factors like memorability, relevance, uniqueness,
-      and overall appeal.
-    max_chunk_size: 10
-    model: gpt-3.5-turbo
+    default_instructions: 'Based on the provided description and scored names, score
+      the following generated name ideas on a scale of 0 to 5, where 5 is excellent
+      and 0 is poor (use integer scores). Consider factors like memorability, relevance,
+      uniqueness, and overall appeal. Please provide scores as a JSON array of index:score
+      (0 to 5), one for each name in order. Example: [1:3, 2:4, 3:0, 4:3]'
+    max_chunk_size: 30
+    model: gpt-4o-mini
   model:
     backoff: true
     order: 3
@@ -32,11 +33,12 @@ config:
     sort_by: length
   saved_ratings: &id001
     aurick: 4
-    gallius: 3
-    upolark: 4
+    auton: 3
+    tenna: 3
   training_data:
     combine_sources: true
     sources:
+    - american_cities.txt
     - animal_sounds.txt
     - atomic_and_subatomic_particles.txt
     - pokemon.txt
@@ -44,11 +46,13 @@ config:
     - programming_languages.txt
     - roman_deities.txt
     - roman_emperor_forenames.txt
+    - roman_place_names.txt
     - theological_angels.txt
     - theological_demons.txt
     - tolkienesque_forenames.txt
   word_list_ratings: &id002
-    american_cities.txt: 0
+    american_cities.txt: 2
+    american_companies.txt: 0
     american_forenames.txt: 0
     animal_sounds.txt: 4
     atomic_and_subatomic_particles.txt: 2
@@ -57,16 +61,26 @@ config:
     programming_languages.txt: 2
     roman_deities.txt: 3
     roman_emperor_forenames.txt: 3
+    roman_place_names.txt: 2
     theological_angels.txt: 4
     theological_demons.txt: 4
     tolkienesque_forenames.txt: 4
 gui_state:
-  ai_description: ''
-  ai_gen_count: 20
-  ai_instructions: Based on the provided description and scored names, score the following
-    generated name ideas on a scale of 0.0 to 5.0, where 5.0 is excellent and 0.0
-    is poor. Consider factors like memorability, relevance, uniqueness, and overall
-    appeal.
+  ai_chunk_size: 30
+  ai_description: 'I need a name for my creative AI agent. This AI agent will be a
+    collective mind, a coordinating brain that helps communities and groups of people
+    organize events and construct collective narrative from decentralized activity.
+    A few tentative ideas are:
+
+    - CoMi (from CollectiveMind)
+
+    - CultureLoom'
+  ai_gen_count: 100
+  ai_instructions: 'Based on the provided description and scored names, score the
+    following generated name ideas on a scale of 0 to 5, where 5 is excellent and
+    0 is poor (use integer scores). Consider factors like memorability, relevance,
+    uniqueness, and overall appeal. Please provide scores as a JSON array of index:score
+    (0 to 5), one for each name in order. Example: [1:3, 2:4, 3:0, 4:3]'
   max_score: 5
   min_score: 1
 saved_ratings: *id001

@@ -96,6 +96,13 @@ class LLMScorer:
             max_tokens=1000
         )
         
+        # Print the full response to terminal for inspection
+        print("="*80)
+        print("LLM RESPONSE RECEIVED:")
+        print("="*80)
+        print(response.choices[0].message.content)
+        print("="*80)
+        
         # Parse response
         return self._parse_scores(response.choices[0].message.content, names)
     
@@ -116,22 +123,76 @@ class LLMScorer:
             for name, score in scored_examples[:10]:  # Limit to top 10 examples
                 prompt_parts.append(f"- {name}: {score:.1f}")
         
-        # Add instructions
+        # Add instructions exactly as provided
         prompt_parts.append(instructions)
         
         # Add names to score
         prompt_parts.append("Names to score:")
         for i, name in enumerate(names, 1):
             prompt_parts.append(f"{i}. {name}")
-            
-        prompt_parts.append("\nPlease provide scores as a JSON array of numbers (0.0 to 5.0), one for each name in order. Example: [4.2, 3.1, 2.8, 4.5]")
         
         return "\n\n".join(prompt_parts)
     
     def _parse_scores(self, response: str, names: List[str]) -> List[Tuple[str, float]]:
         """Parse LLM response to extract scores"""
         
-        # Try to extract JSON array from response
+        # Try to extract JSON object with string keys first
+        json_obj_match = re.search(r'\{[^}]+\}', response, re.DOTALL)
+        
+        if json_obj_match:
+            try:
+                scores_dict = json.loads(json_obj_match.group())
+                
+                # Check if it's a dictionary with string keys
+                if isinstance(scores_dict, dict):
+                    scores = []
+                    for i in range(1, len(names) + 1):  # 1-based indexing
+                        key = str(i)
+                        if key in scores_dict:
+                            score = float(scores_dict[key])
+                            scores.append(max(0.0, min(5.0, score)))
+                        else:
+                            scores.append(2.5)  # Default score if missing
+                    
+                    if len(scores) == len(names):
+                        return list(zip(names, scores))
+                        
+            except (json.JSONDecodeError, ValueError):
+                pass
+        
+        # Try to extract the index:score format [1:3, 2:4, 3:0, 4:3]
+        index_score_match = re.search(r'\[([0-9:,\s]+)\]', response)
+        
+        if index_score_match:
+            try:
+                # Parse the index:score pairs
+                pairs_str = index_score_match.group(1)
+                pairs = [pair.strip() for pair in pairs_str.split(',')]
+                
+                # Create a dictionary to store index -> score mapping
+                score_dict = {}
+                for pair in pairs:
+                    if ':' in pair:
+                        index_str, score_str = pair.split(':')
+                        index = int(index_str.strip())
+                        score = float(score_str.strip())
+                        score_dict[index] = max(0.0, min(5.0, score))
+                
+                # Convert to list of scores in order
+                scores = []
+                for i in range(1, len(names) + 1):  # 1-based indexing
+                    if i in score_dict:
+                        scores.append(score_dict[i])
+                    else:
+                        scores.append(2.5)  # Default score if missing
+                
+                if len(scores) == len(names):
+                    return list(zip(names, scores))
+                    
+            except (ValueError, IndexError):
+                pass
+        
+        # Fallback: try to extract regular JSON array from response
         json_match = re.search(r'\[[\d\s,\.]+\]', response)
         
         if json_match:
@@ -173,14 +234,8 @@ class LLMScorer:
     def get_available_models() -> List[str]:
         """Get list of available LLM models"""
         return [
-            "gpt-3.5-turbo",
-            "gpt-4",
-            "gpt-4-turbo",
-            "claude-3-haiku-20240307",
-            "claude-3-sonnet-20240229",
-            "claude-3-opus-20240229",
-            "gemini-pro",
-            "ollama/llama2",
-            "ollama/mistral",
-            "ollama/codellama"
+            "gpt-4o",
+            "gpt-4o-mini",
+            "claude-sonnet-4-20250514",
+            "claude-opus-4-20250514"
         ]
