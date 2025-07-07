@@ -12,6 +12,13 @@ generation:
   n_words: 20
   regex_pattern: ''
   starts_with: ''
+llm:
+  default_instructions: Based on the provided description and scored names, score
+    the following generated name ideas on a scale of 0.0 to 5.0, where 5.0 is excellent
+    and 0.0 is poor. Consider factors like memorability, relevance, uniqueness, and
+    overall appeal.
+  max_chunk_size: 10
+  model: gpt-3.5-turbo
 model:
   backoff: true
   order: 3
@@ -25,8 +32,13 @@ output:
 training_data:
   combine_sources: true
   sources:
-  - american_cities.txt
+  - animal_sounds.txt
+  - atomic_and_subatomic_particles.txt
+  - roman_emperor_forenames.txt
 word_list_ratings:
   american_cities.txt: 0
   animal_sounds.txt: 4
   atomic_and_subatomic_particles.txt: 2
+  programming_languages.txt: 2
+  roman_deities.txt: 3
+  roman_emperor_forenames.txt: 3
