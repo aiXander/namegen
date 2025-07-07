@@ -56,6 +56,7 @@ class MarkovNameGenerator:
         """Load training data from specified sources"""
         words = []
         sources = self.config['training_data']['sources']
+        filter_special_chars = self.config['training_data'].get('filter_special_chars', True)
         
         for source in sources:
             filepath = os.path.join("word_lists", source)
@@ -63,6 +64,10 @@ class MarkovNameGenerator:
                 words.extend(load_word_list(filepath))
             else:
                 print(f"Warning: Word list {source} not found")
+        
+        # Filter out words with special characters if enabled
+        if filter_special_chars:
+            words = [word for word in words if word.isalpha()]
         
         return words
     

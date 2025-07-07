@@ -7,6 +7,8 @@ import yaml
 import json
 import hashlib
 import random
+import threading
+import atexit
 from typing import Dict, List, Any
 from markov_namegen import MarkovNameGenerator
 from name_generator import NameGenerator
@@ -97,6 +99,9 @@ class MarkovNameGeneratorGUI:
         self.root.title("Markov Name Generator")
         self.root.geometry("800x700")
         
+        # Flag to track if application is being destroyed
+        self.is_closing = False
+        
         # Load default config
         self.config = self.load_config()
         
@@ -116,6 +121,17 @@ class MarkovNameGeneratorGUI:
         
         # Load saved ratings
         self.load_saved_ratings()
+        
+        # Auto-save functionality
+        self.auto_save_timer = None
+        self.start_auto_save_timer()
+        
+        # Register shutdown handler
+        atexit.register(self.save_state_on_exit)
+        self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
+        
+        # Load latest state if available
+        self.load_latest_state()
         
     def load_config(self) -> Dict[str, Any]:
         """Load configuration from YAML file"""
@@ -226,18 +242,14 @@ class MarkovNameGeneratorGUI:
         canvas.pack(side="left", fill="both", expand=True)
         listbox_scrollbar.pack(side="right", fill="y")
         
-        # Enable mouse wheel scrolling
+        # Enable mouse wheel scrolling - simple approach
         def on_mousewheel(event):
             canvas.yview_scroll(int(-1*(event.delta/120)), "units")
         
-        def bind_mousewheel(event):
-            canvas.bind_all("<MouseWheel>", on_mousewheel)
-        
-        def unbind_mousewheel(event):
-            canvas.unbind_all("<MouseWheel>")
-        
-        canvas.bind("<Enter>", bind_mousewheel)
-        canvas.bind("<Leave>", unbind_mousewheel)
+        # Bind mousewheel to the entire scroll_frame
+        scroll_frame.bind("<MouseWheel>", on_mousewheel)
+        canvas.bind("<MouseWheel>", on_mousewheel)
+        self.word_list_frame.bind("<MouseWheel>", on_mousewheel)
         
         # Get all word lists
         word_lists = self.get_word_lists()
@@ -724,18 +736,17 @@ class MarkovNameGeneratorGUI:
         canvas.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
         
-        # Enable mouse wheel scrolling for results
+        # Enable mouse wheel scrolling for results - simple approach
         def on_mousewheel_results(event):
             canvas.yview_scroll(int(-1*(event.delta/120)), "units")
         
-        def bind_mousewheel_results(event):
-            canvas.bind_all("<MouseWheel>", on_mousewheel_results)
+        # Bind mousewheel to the entire main_frame
+        main_frame.bind("<MouseWheel>", on_mousewheel_results)
+        canvas.bind("<MouseWheel>", on_mousewheel_results)
+        self.results_frame.bind("<MouseWheel>", on_mousewheel_results)
         
-        def unbind_mousewheel_results(event):
-            canvas.unbind_all("<MouseWheel>")
-        
-        canvas.bind("<Enter>", bind_mousewheel_results)
-        canvas.bind("<Leave>", unbind_mousewheel_results)
+        # Store canvas reference for later use
+        self.results_canvas = canvas
         
         
         # Store widgets for ratings
@@ -776,38 +787,50 @@ class MarkovNameGeneratorGUI:
     
     def update_config_from_gui(self):
         """Update config dictionary from GUI values"""
-        # Training data
-        selected_sources = []
-        for i, var in enumerate(self.word_list_vars):
-            if var.get():
-                selected_sources.append(self.word_list_mapping[i])
-        self.config['training_data']['sources'] = selected_sources
-        
-        # Save word list ratings
-        self.config['word_list_ratings'] = self.word_list_ratings
-        
-        # Model parameters
-        self.config['model']['order'] = self.order_var.get()
-        self.config['model']['prior'] = self.prior_var.get()
-        self.config['model']['backoff'] = self.backoff_var.get()
-        
-        # Generation parameters
-        self.config['generation']['n_words'] = self.n_words_var.get()
-        self.config['generation']['min_length'] = self.min_length_var.get()
-        self.config['generation']['max_length'] = self.max_length_var.get()
-        self.config['generation']['starts_with'] = self.starts_with_var.get()
-        self.config['generation']['ends_with'] = self.ends_with_var.get()
-        self.config['generation']['includes'] = self.includes_var.get()
-        self.config['generation']['excludes'] = self.excludes_var.get()
-        
-        # AI settings
-        if not self.config.get('llm'):
-            self.config['llm'] = {}
-        self.config['llm']['model'] = self.ai_model_var.get()
-        self.config['llm']['default_instructions'] = self.ai_instructions_text.get('1.0', tk.END).strip()
-        
-        # Saved results
-        self.config['saved_ratings'] = self.saved_ratings
+        try:
+            # Check if application is being closed
+            if self.is_closing:
+                return
+                
+            # Training data
+            selected_sources = []
+            for i, var in enumerate(self.word_list_vars):
+                if var.get():
+                    selected_sources.append(self.word_list_mapping[i])
+            self.config['training_data']['sources'] = selected_sources
+            
+            # Save word list ratings
+            self.config['word_list_ratings'] = self.word_list_ratings
+            
+            # Model parameters
+            self.config['model']['order'] = self.order_var.get()
+            self.config['model']['prior'] = self.prior_var.get()
+            self.config['model']['backoff'] = self.backoff_var.get()
+            
+            # Generation parameters
+            self.config['generation']['n_words'] = self.n_words_var.get()
+            self.config['generation']['min_length'] = self.min_length_var.get()
+            self.config['generation']['max_length'] = self.max_length_var.get()
+            self.config['generation']['starts_with'] = self.starts_with_var.get()
+            self.config['generation']['ends_with'] = self.ends_with_var.get()
+            self.config['generation']['includes'] = self.includes_var.get()
+            self.config['generation']['excludes'] = self.excludes_var.get()
+            
+            # AI settings
+            if not self.config.get('llm'):
+                self.config['llm'] = {}
+            self.config['llm']['model'] = self.ai_model_var.get()
+            try:
+                self.config['llm']['default_instructions'] = self.ai_instructions_text.get('1.0', tk.END).strip()
+            except (tk.TclError, AttributeError):
+                # Widget is no longer valid, skip this update
+                pass
+            
+            # Saved results
+            self.config['saved_ratings'] = self.saved_ratings
+        except (tk.TclError, AttributeError):
+            # Some widgets are no longer valid, skip update
+            pass
     
     def _get_word_list_hash(self):
         """Get a hash of the currently selected word lists"""
@@ -1040,18 +1063,14 @@ class MarkovNameGeneratorGUI:
         canvas.pack(side="left", fill="both", expand=True, padx=10, pady=10)
         scrollbar.pack(side="right", fill="y")
         
-        # Enable mouse wheel scrolling for saved results
+        # Enable mouse wheel scrolling for saved results - simple approach
         def on_mousewheel_saved(event):
             canvas.yview_scroll(int(-1*(event.delta/120)), "units")
         
-        def bind_mousewheel_saved(event):
-            canvas.bind_all("<MouseWheel>", on_mousewheel_saved)
-        
-        def unbind_mousewheel_saved(event):
-            canvas.unbind_all("<MouseWheel>")
-        
-        canvas.bind("<Enter>", bind_mousewheel_saved)
-        canvas.bind("<Leave>", unbind_mousewheel_saved)
+        # Bind mousewheel to the entire frame
+        frame.bind("<MouseWheel>", on_mousewheel_saved)
+        canvas.bind("<MouseWheel>", on_mousewheel_saved)
+        self.saved_results_frame.bind("<MouseWheel>", on_mousewheel_saved)
         
         # Store widgets for saved results
         self.saved_result_widgets = []
@@ -1407,6 +1426,191 @@ class MarkovNameGeneratorGUI:
                 json.dump(self.saved_ratings, f, indent=2)
         except Exception as e:
             print(f"Error saving ratings: {e}")
+    
+    def save_latest_state(self):
+        """Save the complete GUI state to latest_config.yaml"""
+        try:
+            # Check if application is being closed
+            if self.is_closing:
+                return
+            
+            # Update config from current GUI state
+            self.update_config_from_gui()
+            
+            # Create a complete state snapshot, safely accessing widgets
+            gui_state = {}
+            try:
+                gui_state['ai_description'] = self.ai_description_text.get('1.0', tk.END).strip()
+                gui_state['ai_instructions'] = self.ai_instructions_text.get('1.0', tk.END).strip()
+                gui_state['ai_gen_count'] = self.ai_gen_count_var.get()
+                gui_state['min_score'] = self.min_score_var.get()
+                gui_state['max_score'] = self.max_score_var.get()
+            except (tk.TclError, AttributeError):
+                # Widget is no longer valid, skip GUI state saving
+                pass
+            
+            state = {
+                'config': self.config,
+                'gui_state': gui_state,
+                'saved_ratings': self.saved_ratings,
+                'word_list_ratings': self.word_list_ratings
+            }
+            
+            # Save to latest_config.yaml
+            with open("latest_config.yaml", 'w') as f:
+                yaml.dump(state, f, default_flow_style=False)
+                
+        except Exception as e:
+            print(f"Error saving latest state: {e}")
+    
+    def load_latest_state(self):
+        """Load the complete GUI state from latest_config.yaml"""
+        try:
+            if not os.path.exists("latest_config.yaml"):
+                return
+            
+            with open("latest_config.yaml", 'r') as f:
+                state = yaml.safe_load(f)
+            
+            if not state:
+                return
+                
+            # Load config
+            if 'config' in state:
+                self.config = state['config']
+                
+                # Update GUI controls from loaded config
+                self.update_gui_from_config()
+            
+            # Load GUI state
+            if 'gui_state' in state:
+                gui_state = state['gui_state']
+                
+                # Update AI tab fields
+                if 'ai_description' in gui_state:
+                    self.ai_description_text.delete('1.0', tk.END)
+                    self.ai_description_text.insert('1.0', gui_state['ai_description'])
+                
+                if 'ai_instructions' in gui_state:
+                    self.ai_instructions_text.delete('1.0', tk.END)
+                    self.ai_instructions_text.insert('1.0', gui_state['ai_instructions'])
+                
+                if 'ai_gen_count' in gui_state:
+                    self.ai_gen_count_var.set(gui_state['ai_gen_count'])
+                    self.ai_gen_count_label.configure(text=str(gui_state['ai_gen_count']))
+                
+                if 'min_score' in gui_state:
+                    self.min_score_var.set(gui_state['min_score'])
+                    self.min_score_label.configure(text=str(gui_state['min_score']))
+                
+                if 'max_score' in gui_state:
+                    self.max_score_var.set(gui_state['max_score'])
+                    self.max_score_label.configure(text=str(gui_state['max_score']))
+            
+            # Load saved ratings
+            if 'saved_ratings' in state:
+                self.saved_ratings = state['saved_ratings']
+                self.refresh_saved_results()
+            
+            # Load word list ratings
+            if 'word_list_ratings' in state:
+                self.word_list_ratings = state['word_list_ratings']
+                self.refresh_word_list_display()
+                
+        except Exception as e:
+            print(f"Error loading latest state: {e}")
+    
+    def update_gui_from_config(self):
+        """Update GUI controls from the loaded config"""
+        try:
+            # Update model parameters
+            if 'model' in self.config:
+                model_config = self.config['model']
+                if 'order' in model_config:
+                    self.order_var.set(model_config['order'])
+                    self.order_label.configure(text=str(model_config['order']))
+                if 'prior' in model_config:
+                    self.prior_var.set(model_config['prior'])
+                    self.prior_label.configure(text=f"{model_config['prior']:.4f}")
+                if 'backoff' in model_config:
+                    self.backoff_var.set(model_config['backoff'])
+            
+            # Update generation parameters
+            if 'generation' in self.config:
+                gen_config = self.config['generation']
+                if 'n_words' in gen_config:
+                    self.n_words_var.set(gen_config['n_words'])
+                if 'min_length' in gen_config:
+                    self.min_length_var.set(gen_config['min_length'])
+                if 'max_length' in gen_config:
+                    self.max_length_var.set(gen_config['max_length'])
+                if 'starts_with' in gen_config:
+                    self.starts_with_var.set(gen_config['starts_with'])
+                if 'ends_with' in gen_config:
+                    self.ends_with_var.set(gen_config['ends_with'])
+                if 'includes' in gen_config:
+                    self.includes_var.set(gen_config['includes'])
+                if 'excludes' in gen_config:
+                    self.excludes_var.set(gen_config['excludes'])
+            
+            # Update training data selection
+            if 'training_data' in self.config and 'sources' in self.config['training_data']:
+                selected_sources = set(self.config['training_data']['sources'])
+                for i, word_list in enumerate(self.word_list_mapping):
+                    if i < len(self.word_list_vars):
+                        self.word_list_vars[i].set(word_list in selected_sources)
+            
+            # Update AI model selection
+            if 'llm' in self.config:
+                llm_config = self.config['llm']
+                if 'model' in llm_config:
+                    self.ai_model_var.set(llm_config['model'])
+                    
+        except Exception as e:
+            print(f"Error updating GUI from config: {e}")
+    
+    def start_auto_save_timer(self):
+        """Start the auto-save timer"""
+        if self.auto_save_timer:
+            self.auto_save_timer.cancel()
+        
+        self.auto_save_timer = threading.Timer(10.0, self.auto_save_callback)
+        self.auto_save_timer.daemon = True
+        self.auto_save_timer.start()
+    
+    def auto_save_callback(self):
+        """Callback for auto-save timer"""
+        try:
+            self.save_latest_state()
+            print("Auto-saved GUI state to latest_config.yaml")
+        except Exception as e:
+            print(f"Auto-save failed: {e}")
+        finally:
+            # Schedule next auto-save
+            self.start_auto_save_timer()
+    
+    def save_state_on_exit(self):
+        """Save state when application exits"""
+        try:
+            if self.auto_save_timer:
+                self.auto_save_timer.cancel()
+            
+            # Only save if not already closing
+            if not self.is_closing:
+                self.save_latest_state()
+                print("Saved GUI state on exit")
+        except Exception as e:
+            print(f"Error saving state on exit: {e}")
+    
+    def on_closing(self):
+        """Handle window closing event"""
+        try:
+            self.is_closing = True
+            self.save_state_on_exit()
+        except Exception as e:
+            print(f"Error during shutdown: {e}")
+        finally:
+            self.root.destroy()
 
 
 def main():

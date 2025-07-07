@@ -76,10 +76,17 @@ class NameGenerator:
         start_time = time.time()
         max_total_time = max_time_per_name * n
         
-        while len(names) < n and (time.time() - start_time) < max_total_time:
+        while len(names) < n:
             name = self.generate_name(min_length, max_length, starts_with, 
                                     ends_with, includes, excludes, regex_pattern)
             if name is not None:
                 names.append(name)
+            
+            # Safety check to prevent infinite loops - if we've spent too much time
+            # and haven't found any valid names recently, break
+            if (time.time() - start_time) > max_total_time:
+                # If we haven't found any names at all, break to avoid infinite loop
+                if len(names) == 0:
+                    break
         
         return names

@@ -38,8 +38,6 @@ training_data:
   sources:
   - animal_sounds.txt
   - atomic_and_subatomic_particles.txt
-  - pokemon.txt
-  - pokemon_modern.txt
   - programming_languages.txt
   - roman_deities.txt
   - roman_emperor_forenames.txt
@@ -48,7 +46,6 @@ training_data:
   - tolkienesque_forenames.txt
 word_list_ratings:
   american_cities.txt: 0
-  american_forenames.txt: 0
   animal_sounds.txt: 4
   atomic_and_subatomic_particles.txt: 2
   pokemon.txt: 4
