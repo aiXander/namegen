@@ -14,6 +14,9 @@ class Generator:
         self.temperature = temperature
         self.backoff = backoff
         
+        # Ensure all training data is lowercase
+        data = [word.lower() for word in data]
+        
         # Build alphabet from training data
         letters = set()
         for word in data:

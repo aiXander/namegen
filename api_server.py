@@ -264,7 +264,7 @@ def ai_score_names():
         llm_scorer = LLMScorer(model=model, max_chunk_size=max_chunk_size)
         
         # Score names
-        scored_names = llm_scorer.score_names(
+        scored_names, total_cost = llm_scorer.score_names(
             names=names,
             description=description,
             scored_examples=scored_examples,
@@ -275,7 +275,8 @@ def ai_score_names():
         scored_names.sort(key=lambda x: x[1], reverse=True)
         
         return jsonify({
-            'scored_names': [{'name': name, 'score': score} for name, score in scored_names]
+            'scored_names': [{'name': name, 'score': score} for name, score in scored_names],
+            'total_cost': total_cost
         })
         
     except Exception as e:
@@ -330,7 +331,19 @@ def generate_names_stream():
             print("♻️  Using cached generator")
             generator = cached_generator
         else:
-            print("🆕 Creating new generator...")
+            # Determine what triggered the rebuild
+            reasons = []
+            if cached_generator is None:
+                reasons.append("no cached generator")
+            if cached_word_list_hash != current_word_list_hash:
+                reasons.append(f"word list changed ({cached_word_list_hash[:8] if cached_word_list_hash else 'None'} → {current_word_list_hash[:8]})")
+            if cached_model_params_hash != current_model_params_hash:
+                reasons.append(f"model params changed ({cached_model_params_hash[:8] if cached_model_params_hash else 'None'} → {current_model_params_hash[:8]})")
+            
+            print(f"🆕 Creating new generator - triggers: {', '.join(reasons)}")
+            print(f"📚 Selected word lists: {selected_sources}")
+            print(f"⚙️  Model parameters: order={model_params.get('order', 3)}, temp={model_params.get('temperature', 1.0)}, backoff={model_params.get('backoff', True)}")
+            
             try:
                 generator = MarkovNameGenerator()
                 generator.config = current_config
@@ -384,7 +397,6 @@ def generate_names_stream():
                 # Generate names with streaming
                 for name in generate_names_with_progress(generator, config):
                     name_count += 1
-                    print(f"🎯 Yielding name #{name_count}: '{name}'")
                     yield f"data: {json.dumps({'type': 'progress', 'name': name})}\n\n"
                     time.sleep(0.01)  # Small delay to prevent overwhelming the frontend
                 
@@ -418,7 +430,7 @@ def generate_names_with_progress(generator: MarkovNameGenerator, config: Dict[st
     ends_with = gen_config.get('ends_with', '')
     includes = gen_config.get('includes', '')
     excludes = gen_config.get('excludes', '')
-    max_time_per_name = gen_config.get('max_time_per_name', 1.0)
+    max_time_per_name = gen_config.get('max_time_per_name', 2.0)
     regex_pattern = gen_config.get('regex_pattern') if gen_config.get('regex_pattern') else None
     
     print(f"🎯 Target: {target_count} names")
@@ -438,7 +450,7 @@ def generate_names_with_progress(generator: MarkovNameGenerator, config: Dict[st
     last_success_time = start_time
     max_total_time = max_time_per_name * target_count
     attempts_since_last_success = 0
-    max_attempts_per_name = 10000
+    max_attempts_per_name = 100000
     
     while len(names) < target_count:
         try:
@@ -460,20 +472,12 @@ def generate_names_with_progress(generator: MarkovNameGenerator, config: Dict[st
             break
         
         if name is not None:
-            # Print current attempt with overwrite
-            print(f"\rAttempt {attempts_since_last_success}: '{name}' ", end='', flush=True)
-            
             # Apply filtering to this single name
             if should_keep_name(name, names, generator, config):
                 names.append(name)
-                # Print successful name on new line
-                print(f"\n✓ ACCEPTED: '{name}' ({len(names)}/{target_count})")
                 yield name
                 attempts_since_last_success = 0  # Reset attempts counter when we find a valid name
                 last_success_time = time.time()  # Reset success timer
-        else:
-            # Print failed generation attempt
-            print(f"\rAttempt {attempts_since_last_success}: <no name generated> ", end='', flush=True)
         
         # Safety check to prevent infinite loops
         current_time = time.time()

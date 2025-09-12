@@ -25,13 +25,9 @@ const AITab: React.FC<AITabProps> = ({
   const [description, setDescription] = useState('');
   const [instructions, setInstructions] = useState('');
   const [aiModels, setAIModels] = useState<string[]>([]);
-  const [selectedModel, setSelectedModel] = useState('gpt-3.5-turbo');
+  const [selectedModel, setSelectedModel] = useState('gpt-4o-mini');
   const [maxNames, setMaxNames] = useState(20);
   const [chunkSize, setChunkSize] = useState(10);
-  const [loading, setLoading] = useState(false);
-  const [progress, setProgress] = useState(0);
-  const [progressMessage, setProgressMessage] = useState('Ready');
-  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     loadAIModels();
@@ -41,7 +37,7 @@ const AITab: React.FC<AITabProps> = ({
     if (llmConfig.default_instructions) {
       setInstructions(llmConfig.default_instructions);
     } else {
-      setInstructions('Based on the provided description and scored names, score the following generated name ideas on a scale of 0.0 to 5.0, where 5.0 is excellent and 0.0 is poor.');
+      setInstructions('Based on the provided description and scored names, score the following generated name ideas on a scale of 0 to 5, where 5 is excellent and 0 is poor (use integer scores). Consider factors like memorability, relevance, uniqueness, and overall appeal. Reply with the scores as a JSON dict where keys are the actual name strings and values are the scores. Example: {"aurick": 3, "mindflow": 4, "nexus": 0, "collective": 3}');
     }
     
     if (llmConfig.description) {
@@ -50,10 +46,29 @@ const AITab: React.FC<AITabProps> = ({
     
     if (llmConfig.model) {
       setSelectedModel(llmConfig.model);
+    } else {
+      // If no model is set in config, set the default and update config
+      const defaultModel = 'gpt-4o-mini';
+      setSelectedModel(defaultModel);
+      const updatedConfig = {
+        ...config,
+        llm: {
+          ...config.llm,
+          model: defaultModel
+        }
+      };
+      onConfigChange(updatedConfig);
     }
     
     if (llmConfig.max_chunk_size) {
       setChunkSize(llmConfig.max_chunk_size);
+    }
+    
+    // Load max_names from config
+    if (config.ai_settings?.max_names) {
+      setMaxNames(config.ai_settings.max_names);
+    } else if (llmConfig.max_names) {
+      setMaxNames(llmConfig.max_names);
     }
   }, [config]);
 
@@ -67,81 +82,6 @@ const AITab: React.FC<AITabProps> = ({
     }
   };
 
-  const handleAIScore = async () => {
-    if (!description.trim()) {
-      setError('Please provide a description for the names.');
-      return;
-    }
-    
-    if (!instructions.trim()) {
-      setError('Please provide instructions for the LLM.');
-      return;
-    }
-    
-    if (results.length === 0) {
-      setError('No existing results to score. Please generate names first in the Results tab.');
-      return;
-    }
-
-    setLoading(true);
-    setError(null);
-    setProgress(0);
-    setProgressMessage('Initializing AI scorer...');
-
-    try {
-      const namesToScore = results.slice(0, maxNames);
-      
-      setProgress(20);
-      setProgressMessage('Scoring names with AI...');
-      
-      const response = await apiService.scoreNamesWithAI({
-        names: namesToScore,
-        description: description.trim(),
-        instructions: instructions.trim(),
-        model: selectedModel,
-        max_chunk_size: chunkSize
-      });
-      
-      setProgress(100);
-      setProgressMessage('Complete!');
-      
-      onAIResults(response.scored_names);
-      
-      // Update and save config with current settings including UI state
-      const updatedConfig = {
-        ...config,
-        llm: {
-          ...config.llm,
-          model: selectedModel,
-          max_chunk_size: chunkSize,
-          default_instructions: instructions.trim(),
-          description: description.trim()
-        },
-        training_data: {
-          ...config.training_data,
-          sources: selectedSources,
-          score_range: {
-            min: minScore,
-            max: maxScore
-          }
-        }
-      };
-      onConfigChange(updatedConfig);
-      
-      // Save config to file
-      try {
-        await apiService.updateConfig(updatedConfig);
-      } catch (err) {
-        console.error('Failed to save config after AI scoring:', err);
-      }
-      
-    } catch (err: any) {
-      setError(err.response?.data?.error || 'Failed to score names with AI');
-      console.error('AI scoring error:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   return (
     <div>
@@ -156,7 +96,18 @@ const AITab: React.FC<AITabProps> = ({
           </label>
           <textarea
             value={description}
-            onChange={(e) => setDescription(e.target.value)}
+            onChange={(e) => {
+              setDescription(e.target.value);
+              // Update config when description changes
+              const updatedConfig = {
+                ...config,
+                llm: {
+                  ...config.llm,
+                  description: e.target.value
+                }
+              };
+              onConfigChange(updatedConfig);
+            }}
             className="form-textarea"
             placeholder="Describe what these names are for..."
             rows={3}
@@ -170,7 +121,18 @@ const AITab: React.FC<AITabProps> = ({
         <div className="form-group">
           <textarea
             value={instructions}
-            onChange={(e) => setInstructions(e.target.value)}
+            onChange={(e) => {
+              setInstructions(e.target.value);
+              // Update config when instructions change
+              const updatedConfig = {
+                ...config,
+                llm: {
+                  ...config.llm,
+                  default_instructions: e.target.value
+                }
+              };
+              onConfigChange(updatedConfig);
+            }}
             className="form-textarea"
             rows={4}
           />
@@ -186,7 +148,19 @@ const AITab: React.FC<AITabProps> = ({
             <label className="form-label">LLM Model</label>
             <select
               value={selectedModel}
-              onChange={(e) => setSelectedModel(e.target.value)}
+              onChange={(e) => {
+                const newModel = e.target.value;
+                setSelectedModel(newModel);
+                // Update config when model changes
+                const updatedConfig = {
+                  ...config,
+                  llm: {
+                    ...config.llm,
+                    model: newModel
+                  }
+                };
+                onConfigChange(updatedConfig);
+              }}
               className="form-select"
             >
               {aiModels.map(model => (
@@ -202,7 +176,19 @@ const AITab: React.FC<AITabProps> = ({
               min="1"
               max="100"
               value={maxNames}
-              onChange={(e) => setMaxNames(parseInt(e.target.value))}
+              onChange={(e) => {
+                const value = parseInt(e.target.value);
+                setMaxNames(value);
+                // Update config immediately
+                const updatedConfig = {
+                  ...config,
+                  ai_settings: {
+                    ...config.ai_settings,
+                    max_names: value
+                  }
+                };
+                onConfigChange(updatedConfig);
+              }}
               className="range-slider w-full"
             />
           </div>
@@ -214,49 +200,33 @@ const AITab: React.FC<AITabProps> = ({
               min="1"
               max="50"
               value={chunkSize}
-              onChange={(e) => setChunkSize(parseInt(e.target.value))}
+              onChange={(e) => {
+                const value = parseInt(e.target.value);
+                setChunkSize(value);
+                // Update config when chunk size changes
+                const updatedConfig = {
+                  ...config,
+                  llm: {
+                    ...config.llm,
+                    max_chunk_size: value
+                  }
+                };
+                onConfigChange(updatedConfig);
+              }}
               className="range-slider w-full"
             />
           </div>
         </div>
 
-        {/* Progress */}
-        <div className="form-group">
-          <label className="form-label">Progress</label>
-          <div className="progress-bar">
-            <div 
-              className="progress-fill" 
-              style={{ width: `${progress}%` }}
-            ></div>
-          </div>
-          <p className="text-sm text-muted">{progressMessage}</p>
+
+        {/* AI Score button is now in the main header */}
+        <div className="text-muted text-sm">
+          Use the "AI Score Names" button in the top-right corner to score generated names.
+          {results.length === 0 && (
+            <span> Generate some names first to enable AI scoring.</span>
+          )}
         </div>
 
-        {/* Generate button */}
-        <button
-          className="btn btn-primary w-full"
-          onClick={handleAIScore}
-          disabled={loading || results.length === 0}
-        >
-          {loading ? (
-            <>
-              <div className="loading-spinner"></div>
-              Scoring with AI...
-            </>
-          ) : (
-            'AI Score Names'
-          )}
-        </button>
-
-        {error && (
-          <div className="error-message mt-2">{error}</div>
-        )}
-        
-        {results.length === 0 && (
-          <div className="text-muted text-sm mt-2">
-            Generate some names first to enable AI scoring.
-          </div>
-        )}
       </div>
     </div>
   );

@@ -124,12 +124,18 @@ const GenerationProgressModal: React.FC<GenerationProgressModalProps> = ({
       }
     } catch (error) {
       if (error instanceof Error && error.name === 'AbortError') {
-        // Generation was stopped by user
-        onComplete(names);
+        // Generation was stopped by user - use current names state
+        setNames(currentNames => {
+          onComplete(currentNames);
+          return currentNames;
+        });
       } else {
         console.error('Generation error:', error);
-        // Still return whatever names we have
-        onComplete(names);
+        // Still return whatever names we have - use current names state
+        setNames(currentNames => {
+          onComplete(currentNames);
+          return currentNames;
+        });
       }
     } finally {
       setIsGenerating(false);
@@ -142,12 +148,9 @@ const GenerationProgressModal: React.FC<GenerationProgressModalProps> = ({
       abortController.abort();
     }
     setIsGenerating(false);
-    // Pass any generated names to the results
-    if (names.length > 0) {
-      onComplete(names);
-    } else {
-      onStop();
-    }
+    // Always route to results page with whatever names we have, even if empty
+    // This ensures consistent behavior when user manually stops generation
+    onComplete(names);
   };
 
   // Reset state when modal opens

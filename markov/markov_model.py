@@ -3,7 +3,6 @@ import math
 from typing import List, Dict, Optional
 from collections import defaultdict
 
-
 class MarkovModel:
     def __init__(self, data: List[str], order: int, temperature: float, alphabet: List[str]):
         assert alphabet is not None and data is not None
@@ -38,6 +37,8 @@ class MarkovModel:
     
     def _train(self, data: List[str]) -> None:
         """Train the model on training data"""
+        print(f"🧠 Training Markov model (order={self.order}, temp={self.temperature:.2f}) on {len(data)} words")
+        
         for word in data:
             # Add padding characters
             padded_word = "#" * self.order + word + "#"
@@ -47,9 +48,12 @@ class MarkovModel:
                 key = padded_word[i:i + self.order]
                 value = padded_word[i + self.order]
                 self.observations[key].append(value)
+                
+        print(f"📊 Extracted {len(self.observations)} unique n-gram contexts from training data")
     
     def _build_chains(self) -> None:
         """Build Markov chains from observations with temperature scaling"""
+        print(f"🔗 Building Markov chains for {len(self.observations)} contexts...")
         self.chains = {}
         
         for context in self.observations.keys():
@@ -90,6 +94,8 @@ class MarkovModel:
                     
             
             self.chains[context] = chain
+            
+        print(f"✅ Built {len(self.chains)} Markov chains with alphabet size {len(self.alphabet)}")
     
     def _count_matches(self, arr: List[str], value: str) -> int:
         """Count occurrences of value in array"""

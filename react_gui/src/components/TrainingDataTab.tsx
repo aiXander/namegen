@@ -248,10 +248,13 @@ const TrainingDataTab: React.FC<TrainingDataTabProps> = ({
       {/* Word lists table */}
       <div className="max-h-96 overflow-y-auto">
         <table className="w-full">
-          <thead className="sticky top-0 border-b border-border-color" style={{ backgroundColor: 'var(--bg-primary)', zIndex: 20 }}>
+          <thead className="sticky top-0 border-b border-border-color" style={{ backgroundColor: '#1a1a1a', zIndex: 20 }}>
             <tr>
               <th className="text-left py-3 px-4 w-12">
                 <span className="text-sm font-medium text-primary">Select</span>
+              </th>
+              <th className="text-left py-3 px-4 w-24">
+                <span className="text-sm font-medium text-primary">View</span>
               </th>
               <th 
                 className="text-left py-3 px-4 cursor-pointer hover:bg-bg-hover"
@@ -286,9 +289,6 @@ const TrainingDataTab: React.FC<TrainingDataTabProps> = ({
                   )}
                 </div>
               </th>
-              <th className="text-left py-3 px-4 w-24">
-                <span className="text-sm font-medium text-primary">Actions</span>
-              </th>
             </tr>
           </thead>
           <tbody>
@@ -305,6 +305,15 @@ const TrainingDataTab: React.FC<TrainingDataTabProps> = ({
                     />
                   </td>
                   <td className="py-3 px-4">
+                    <button
+                      className="btn btn-small btn-secondary"
+                      onClick={() => handleViewWordList(wordList.filename)}
+                    >
+                      <Eye size={14} />
+                      View
+                    </button>
+                  </td>
+                  <td className="py-3 px-4">
                     <span className="font-medium">{wordList.display_name}</span>
                   </td>
                   <td className="py-3 px-4">
@@ -316,15 +325,6 @@ const TrainingDataTab: React.FC<TrainingDataTabProps> = ({
                       onRate={(rating) => handleRateWordList(wordList.filename, rating)}
                       size="small"
                     />
-                  </td>
-                  <td className="py-3 px-4">
-                    <button
-                      className="btn btn-small btn-secondary"
-                      onClick={() => handleViewWordList(wordList.filename)}
-                    >
-                      <Eye size={14} />
-                      View
-                    </button>
                   </td>
                 </tr>
               );

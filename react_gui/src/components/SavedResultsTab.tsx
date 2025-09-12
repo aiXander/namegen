@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Trash2, Edit3 } from 'lucide-react';
 import { apiService } from '../services/api';
 import Modal from './Modal';
+import StarRating from './StarRating';
 
 interface SavedResultsTabProps {
   ratings: Record<string, number>;
@@ -10,11 +11,10 @@ interface SavedResultsTabProps {
 
 const SavedResultsTab: React.FC<SavedResultsTabProps> = ({ ratings, onRatingsChange }) => {
   const [editingName, setEditingName] = useState<string | null>(null);
-  const [editRating, setEditRating] = useState<number>(0);
+  const [newName, setNewName] = useState<string>('');
   const [modalOpen, setModalOpen] = useState(false);
 
   const sortedRatings = Object.entries(ratings)
-    .filter(([_, rating]) => rating > 0)
     .sort(([, a], [, b]) => b - a);
 
   const handleDeleteRating = async (name: string) => {
@@ -39,35 +39,52 @@ const SavedResultsTab: React.FC<SavedResultsTabProps> = ({ ratings, onRatingsCha
     }
   };
 
-  const handleEditRating = (name: string, currentRating: number) => {
+  const handleEditName = (name: string) => {
     setEditingName(name);
-    setEditRating(currentRating);
+    setNewName(name);
     setModalOpen(true);
   };
 
   const handleSaveEdit = async () => {
-    if (editingName && editRating >= 1 && editRating <= 5) {
+    if (editingName && newName.trim() && newName.trim() !== editingName) {
       try {
-        await apiService.rateName(editingName, editRating);
-        onRatingsChange({
-          ...ratings,
-          [editingName]: editRating
-        });
+        const oldRating = ratings[editingName];
+        // Delete the old rating
+        await apiService.deleteRating(editingName);
+        // Add the new name with the same rating
+        await apiService.rateName(newName.trim(), oldRating);
+        
+        const newRatings = { ...ratings };
+        delete newRatings[editingName];
+        newRatings[newName.trim()] = oldRating;
+        
+        onRatingsChange(newRatings);
         setModalOpen(false);
         setEditingName(null);
+        setNewName('');
       } catch (err) {
-        console.error('Failed to update rating:', err);
+        console.error('Failed to update name:', err);
       }
+    } else if (newName.trim() === editingName) {
+      // No change needed, just close modal
+      setModalOpen(false);
+      setEditingName(null);
+      setNewName('');
     }
   };
 
-  const renderStars = (rating: number) => {
-    return (
-      <span className="text-star-color">
-        {'★'.repeat(rating)}{'☆'.repeat(5 - rating)} ({rating}/5)
-      </span>
-    );
+  const handleRateChange = async (name: string, rating: number) => {
+    try {
+      await apiService.rateName(name, rating);
+      onRatingsChange({
+        ...ratings,
+        [name]: rating
+      });
+    } catch (err) {
+      console.error('Failed to rate name:', err);
+    }
   };
+
 
   return (
     <div>
@@ -101,11 +118,12 @@ const SavedResultsTab: React.FC<SavedResultsTabProps> = ({ ratings, onRatingsCha
             Saved Names ({sortedRatings.length} total):
           </p>
 
-          <div className="space-y-3 max-h-96 overflow-y-auto">
+          <div className="space-y-3 max-h-128 overflow-y-auto">
             {sortedRatings.map(([name, rating]) => (
               <div key={name} className="card">
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-4">
+                  {/* Action buttons */}
+                  <div className="flex items-center gap-2">
                     <button
                       className="btn btn-small btn-danger"
                       onClick={() => handleDeleteRating(name)}
@@ -116,17 +134,33 @@ const SavedResultsTab: React.FC<SavedResultsTabProps> = ({ ratings, onRatingsCha
                     
                     <button
                       className="btn btn-small btn-secondary"
-                      onClick={() => handleEditRating(name, rating)}
-                      title="Edit rating"
+                      onClick={() => handleEditName(name)}
+                      title="Edit name"
                     >
                       <Edit3 size={14} />
                     </button>
-                    
-                    <span className="font-bold text-lg">{name}</span>
                   </div>
                   
-                  <div className="text-sm">
-                    {renderStars(rating)}
+                  {/* Name versions in horizontal layout */}
+                  <div className="flex items-center justify-center flex-1">
+                    <span className="font-bold text-lg">{name.toLowerCase()}</span>
+                    <span className="text-muted">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;|&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>
+                    <span className="font-bold text-lg">{name.charAt(0).toUpperCase() + name.slice(1).toLowerCase()}</span>
+                    <span className="text-muted">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;|&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>
+                    <span className="font-bold text-lg">{name.toUpperCase()}</span>
+                  </div>
+                  
+                  {/* Rating */}
+                  <div className="flex items-center gap-2">
+                    <StarRating
+                      rating={rating}
+                      onRate={(newRating) => handleRateChange(name, newRating)}
+                      size="small"
+                      showLabel={false}
+                    />
+                    <span className="text-sm text-muted">
+                      {rating}/5
+                    </span>
                   </div>
                 </div>
               </div>
@@ -135,25 +169,24 @@ const SavedResultsTab: React.FC<SavedResultsTabProps> = ({ ratings, onRatingsCha
         </div>
       )}
 
-      {/* Edit rating modal */}
+      {/* Edit name modal */}
       <Modal
         isOpen={modalOpen}
         onClose={() => setModalOpen(false)}
-        title={`Edit Score for "${editingName}"`}
+        title={`Edit Name for "${editingName}"`}
       >
         <div className="space-y-4">
           <div className="form-group">
             <label className="form-label">
-              New Score (1-5):
-              <span className="text-muted ml-2">Current: {ratings[editingName || ''] || 0}</span>
+              New Name:
+              <span className="text-muted ml-2">Current: {editingName}</span>
             </label>
             <input
-              type="number"
-              min="1"
-              max="5"
-              value={editRating}
-              onChange={(e) => setEditRating(parseInt(e.target.value))}
+              type="text"
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
               className="form-input"
+              placeholder="Enter new name"
             />
           </div>
           
@@ -167,7 +200,7 @@ const SavedResultsTab: React.FC<SavedResultsTabProps> = ({ ratings, onRatingsCha
             <button
               className="btn btn-primary"
               onClick={handleSaveEdit}
-              disabled={editRating < 1 || editRating > 5}
+              disabled={!newName.trim()}
             >
               Save
             </button>

@@ -20,6 +20,13 @@ class GenerationConstraints:
     includes: str = ""
     excludes: str = ""
     regex_pattern: Optional[str] = None
+    
+    def __post_init__(self):
+        """Ensure all text constraints are lowercase"""
+        self.starts_with = self.starts_with.lower()
+        self.ends_with = self.ends_with.lower()
+        self.includes = self.includes.lower()
+        self.excludes = self.excludes.lower()
 
 
 class ProbabilityModifier:
@@ -192,8 +199,8 @@ class ConstraintHandlers:
         if required_length > constraints.max_length:
             return False
             
-        if required_length > constraints.min_length and constraints.min_length > 0:
-            return False
+        # Only reject if required length exceeds max_length
+        # We can always generate words >= required_length by adding middle content
             
         return True
 
@@ -255,8 +262,8 @@ class ConstraintSampler:
             # 5. Standard termination if no ends_with
             final_word = word.replace("#", "")
         
-        # 6. Apply includes constraint as posterior filter (if needed)
-        if constraints.includes and constraints.includes not in final_word:
+        # 6. Apply includes constraint as posterior filter with AND/OR logic
+        if constraints.includes and not self._meets_includes_constraint(final_word, constraints.includes):
             return None
             
         return final_word if self._meets_length_constraints(final_word, constraints) else None
@@ -300,15 +307,28 @@ class ConstraintSampler:
             # Get context for next character prediction
             context = word[-self.model.order:]
             
-            # Get base probabilities
-            base_probs = self.model.chains.get(context)
-            if base_probs is None:
-                # Try shorter context if backoff is available
-                if len(context) > 1:
+            # Get base probabilities with proper backoff
+            base_probs = None
+            original_context = context
+            
+            # Try progressively shorter contexts until we find one that works
+            while base_probs is None and len(context) > 0:
+                base_probs = self.model.chains.get(context)
+                if base_probs is None and len(context) > 1:
                     context = context[1:]
-                    base_probs = self.model.chains.get(context)
-                if base_probs is None:
+                else:
                     break
+                    
+            # If we still can't find anything, try single character contexts
+            if base_probs is None and len(original_context) > 0:
+                for i in range(len(original_context)):
+                    single_char_context = original_context[i]
+                    base_probs = self.model.chains.get(single_char_context)
+                    if base_probs is not None:
+                        break
+                        
+            if base_probs is None:
+                break
                 
             # Apply constraint modifications
             modified_probs = self._apply_constraint_modifications(
@@ -369,6 +389,38 @@ class ConstraintSampler:
                 return self.model.alphabet[i]
                 
         return None
+    
+    def _meets_includes_constraint(self, word: str, includes_pattern: str) -> bool:
+        """
+        Check if word meets includes constraint with AND/OR logic.
+        
+        Format:
+        - 'x,a' = must contain BOTH x AND a (comma = AND)
+        - 'x;a' = must contain EITHER x OR a (semicolon = OR)  
+        - 'x,a;b,c' = must contain (x AND a) OR (b AND c)
+        
+        Args:
+            word: Generated word to check
+            includes_pattern: Pattern string with AND/OR logic
+            
+        Returns:
+            True if word meets the includes constraint
+        """
+        if not includes_pattern.strip():
+            return True
+            
+        # Split by semicolon for OR groups
+        or_groups = [group.strip() for group in includes_pattern.split(';')]
+        
+        for group in or_groups:
+            # Split by comma for AND conditions within each group
+            and_conditions = [condition.strip() for condition in group.split(',') if condition.strip()]
+            
+            # Check if all AND conditions in this group are met
+            if and_conditions and all(condition in word for condition in and_conditions):
+                return True
+        
+        return False
     
     def _meets_length_constraints(self, word: str, constraints: GenerationConstraints) -> bool:
         """Check if word meets length constraints"""

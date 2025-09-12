@@ -132,13 +132,21 @@ const SamplingParametersTab: React.FC<SamplingParametersTabProps> = ({ config, o
               </div>
               
               <div>
-                <label className="text-sm text-muted">Includes</label>
+                <label className="text-sm text-muted">
+                  Includes
+                  <span 
+                    className="ml-2 text-xs text-blue-600 cursor-help" 
+                    title="Pattern formats:&#10;• 'x,a' = must contain BOTH x AND a&#10;• 'x;a' = must contain EITHER x OR a&#10;• 'x,a;b,c' = must contain (x AND a) OR (b AND c)&#10;• Examples: 'an,er' = both 'an' and 'er', 'tech;bio' = either 'tech' or 'bio'"
+                  >
+                    ℹ️
+                  </span>
+                </label>
                 <input
                   type="text"
                   value={generationConfig.includes || ''}
                   onChange={(e) => updateGenerationConfig({ includes: e.target.value })}
                   className="form-input"
-                  placeholder="e.g., 'an' or 'tech'"
+                  placeholder="e.g., 'an,er' or 'tech;bio'"
                 />
               </div>
               

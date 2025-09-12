@@ -1,30 +1,39 @@
+ai_settings:
+  max_names: 100
 filtering:
   exclude_training_words: true
   min_edit_distance: 2
   remove_duplicates: true
 generation:
-  ends_with: ''
+  ends_with: mind
   excludes: ''
   includes: ''
-  max_length: 9
-  max_time_per_name: 0.02
-  min_length: 5
-  n_words: 100
+  max_length: 12
+  max_time_per_name: 2
+  min_length: 6
+  n_words: 20
   regex_pattern: ''
-  starts_with: co
+  starts_with: ''
 llm:
   default_instructions: 'Based on the provided description and scored names, score
     the following generated name ideas on a scale of 0 to 5, where 5 is excellent
-    and 0 is poor (use integer scores). Consider factors like memorability, relevance,
-    uniqueness, and overall appeal. Reply with the scores as a JSON array of index:score
-    (0 to 5), one for each name in order and nothing else. Example: [1:3, 2:4, 3:0,
-    4:3]'
-  max_chunk_size: 30
-  model: gpt-4o-mini
+    and 0 is poor (use integer scores).
+
+    Consider factors like memorability, relevance, uniqueness, and overall appeal.
+    Reply with the scores as a JSON dict where keys are the actual name strings and
+    values are the scores.'
+  description: We are going to evaluating names for an AI agent that acts as the collective
+    mind for communities and organizations. This agent will embody the collective
+    consciousness of the group, act as echochamber, brainstorming partner, collective
+    memory and coordination agent for teams, communities, festivals and decentralized
+    organisations. The name should feel welcoming, organic, meta, but also grand and
+    present. Ideally, the name has some hints as to its purpose.
+  max_chunk_size: 10
+  model: gpt-5-mini
 model:
-  backoff: true
-  order: 4
-  prior: 0.01
+  backoff: false
+  order: 3
+  temperature: 0.8
 output:
   format: list
   output_file: generated_names.txt
@@ -34,34 +43,37 @@ output:
 saved_ratings:
   aurick: 4
   auton: 3
-  chatty: 1
-  clark: 2
-  crowzd: 3
-  "flaea\xEB": 1
-  liberyx: 2
   tenna: 3
 training_data:
   combine_sources: true
+  score_range:
+    max: 5
+    min: 2
   sources:
-  - american_cities.txt
   - animal_sounds.txt
   - atomic_and_subatomic_particles.txt
+  - egyptian_deities.txt
+  - fabrics.txt
+  - icelandic_forenames.txt
   - pokemon.txt
   - pokemon_modern.txt
   - programming_languages.txt
   - roman_deities.txt
   - roman_emperor_forenames.txt
   - roman_place_names.txt
+  - satellites_natural.txt
+  - swedish_forenames.txt
   - theological_angels.txt
   - theological_demons.txt
   - tolkienesque_forenames.txt
   - websites.txt
 word_list_ratings:
-  american_cities.txt: 2
+  american_cities.txt: 0
   american_companies.txt: 0
   american_forenames.txt: 0
   animal_sounds.txt: 4
   atomic_and_subatomic_particles.txt: 2
+  egyptian_deities.txt: 3
   fabrics.txt: 3
   icelandic_forenames.txt: 2
   pokemon.txt: 4
@@ -70,6 +82,7 @@ word_list_ratings:
   roman_deities.txt: 3
   roman_emperor_forenames.txt: 3
   roman_place_names.txt: 2
+  satellites_natural.txt: 3
   swedish_forenames.txt: 3
   theological_angels.txt: 4
   theological_demons.txt: 4

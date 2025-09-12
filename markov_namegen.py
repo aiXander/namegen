@@ -69,6 +69,9 @@ class MarkovNameGenerator:
         if filter_special_chars:
             words = [word for word in words if word.isalpha()]
         
+        # Ensure all training data is lowercase
+        words = [word.lower() for word in words]
+        
         return words
     
     def generate_names(self) -> List[str]:

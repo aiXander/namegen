@@ -9,6 +9,7 @@ interface ResultsTabProps {
   ratings: Record<string, number>;
   onRateChange: (name: string, rating: number) => void;
   onAIScoreClick?: () => void;
+  aiCost?: number;
 }
 
 interface ResultItem {
@@ -22,7 +23,8 @@ const ResultsTab: React.FC<ResultsTabProps> = ({
   aiResults, 
   ratings, 
   onRateChange,
-  onAIScoreClick 
+  onAIScoreClick,
+  aiCost 
 }) => {
   const [sortColumn, setSortColumn] = useState<'name' | 'aiScore' | 'userRating'>('name');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
@@ -110,7 +112,7 @@ const ResultsTab: React.FC<ResultsTabProps> = ({
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-4">
           <h2 className="text-xl font-bold">Results</h2>
-          {results.length > 0 && onAIScoreClick && (
+          {results.length > 0 && onAIScoreClick && aiResults.length === 0 && (
             <button
               className="btn btn-secondary"
               onClick={onAIScoreClick}
@@ -119,6 +121,11 @@ const ResultsTab: React.FC<ResultsTabProps> = ({
               <Bot size={16} />
               AI Score Names
             </button>
+          )}
+          {aiCost !== undefined && aiCost > 0 && (
+            <div className="text-sm text-blue-400 bg-blue-400/10 px-3 py-1 rounded-md border border-blue-400/20">
+              AI Scoring Cost: ${aiCost.toFixed(4)}
+            </div>
           )}
         </div>
         {aiResults.length > 0 && (
@@ -139,9 +146,9 @@ const ResultsTab: React.FC<ResultsTabProps> = ({
           </p>
 
           {/* Results table */}
-          <div className="max-h-96 overflow-y-auto">
+          <div className="max-h-128 overflow-y-auto">
             <table className="w-full">
-              <thead className="sticky top-0 border-b border-border-color" style={{ backgroundColor: 'var(--bg-primary)', zIndex: 20 }}>
+              <thead className="sticky top-0 border-b border-border-color" style={{ backgroundColor: '#1a1a1a', zIndex: 20 }}>
                 <tr>
                   <th className="text-left py-3 px-4 w-12">
                     <span className="text-sm font-medium text-primary">#</span>

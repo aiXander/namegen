@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Play, Save, FolderOpen } from 'lucide-react';
+import { Play, Save, FolderOpen, Bot } from 'lucide-react';
 import { apiService, Config, ScoredName } from './services/api';
 import TrainingDataTab from './components/TrainingDataTab';
 import SamplingParametersTab from './components/SamplingParametersTab';
@@ -14,9 +14,10 @@ function App() {
   const [results, setResults] = useState<string[]>([]);
   const [aiResults, setAIResults] = useState<ScoredName[]>([]);
   const [ratings, setRatings] = useState<Record<string, number>>({});
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showGenerationModal, setShowGenerationModal] = useState(false);
+  const [aiLoading, setAILoading] = useState(false);
+  const [aiCost, setAICost] = useState<number>(0);
   
   // UI state that persists across tab switches
   const [selectedSources, setSelectedSources] = useState<string[]>([]);
@@ -87,6 +88,7 @@ function App() {
   const handleGenerationComplete = (names: string[]) => {
     setResults(names);
     setAIResults([]); // Clear AI results when generating new names
+    setAICost(0); // Clear AI cost when generating new names
     setShowGenerationModal(false);
     setActiveTab('results'); // Switch to results tab
   };
@@ -165,6 +167,81 @@ function App() {
     setActiveTab('results'); // Switch to results tab to show AI results
   };
 
+  const handleAIScoreNames = async () => {
+    if (!results || results.length === 0) {
+      setError('No existing results to score. Please generate names first.');
+      return;
+    }
+
+    const llmConfig = config.llm || {};
+    const description = llmConfig.description || '';
+    const instructions = llmConfig.default_instructions || 'Based on the provided description and scored names, score the following generated name ideas on a scale of 0 to 5, where 5 is excellent and 0 is poor (use integer scores). Consider factors like memorability, relevance, uniqueness, and overall appeal. Reply with the scores as a JSON dict where keys are the actual name strings and values are the scores. Example: {"aurick": 3, "mindflow": 4, "nexus": 0, "collective": 3}';
+    
+    if (!description.trim()) {
+      setError('Please provide a description for the names in the AI tab first.');
+      return;
+    }
+
+    setAILoading(true);
+    setError(null);
+
+    try {
+      // Get maxNames from config if it exists, otherwise default to 20
+      const maxNames = config.ai_settings?.max_names || 20;
+      const namesToScore = results.slice(0, maxNames);
+      
+      const response = await apiService.scoreNamesWithAI({
+        names: namesToScore,
+        description: description.trim(),
+        instructions: instructions.trim(),
+        model: llmConfig.model || 'gpt-4o-mini',
+        max_chunk_size: llmConfig.max_chunk_size || 10
+      });
+      
+      setAIResults(response.scored_names);
+      setAICost(response.total_cost);
+      setActiveTab('results');
+      
+      // Update and save config with current settings including UI state
+      const updatedConfig = {
+        ...config,
+        ai_settings: {
+          ...config.ai_settings,
+          max_names: maxNames
+        },
+        llm: {
+          ...config.llm,
+          model: llmConfig.model || 'gpt-4o-mini',
+          max_chunk_size: llmConfig.max_chunk_size || 10,
+          description: description.trim(),
+          default_instructions: instructions.trim()
+        },
+        training_data: {
+          ...config.training_data,
+          sources: selectedSources,
+          score_range: {
+            min: minScore,
+            max: maxScore
+          }
+        }
+      };
+      setConfig(updatedConfig);
+      
+      // Save config to file
+      try {
+        await apiService.updateConfig(updatedConfig);
+      } catch (err) {
+        console.error('Failed to save config after AI scoring:', err);
+      }
+      
+    } catch (err: any) {
+      setError(err.response?.data?.error || 'Failed to score names with AI');
+      console.error('AI scoring error:', err);
+    } finally {
+      setAILoading(false);
+    }
+  };
+
   const tabs = [
     { id: 'training', label: 'Training Data' },
     { id: 'parameters', label: 'Sampling Parameters' },
@@ -184,28 +261,46 @@ function App() {
           </div>
           
           {/* Control Buttons */}
-          <div className="flex gap-4">
+          <div className="grid grid-cols-2 gap-2 w-64">
             <button
-              className="btn btn-primary"
+              className="btn btn-primary btn-compact"
               onClick={handleGenerateNames}
             >
-              <Play size={16} />
+              <Play size={12} />
               Generate Names
             </button>
 
             <button
-              className="btn btn-secondary"
+              className="btn btn-primary btn-compact"
+              onClick={handleAIScoreNames}
+              disabled={aiLoading || results.length === 0}
+            >
+              {aiLoading ? (
+                <>
+                  <div className="loading-spinner-small"></div>
+                  Scoring...
+                </>
+              ) : (
+                <>
+                  <Bot size={12} />
+                  AI Score Names
+                </>
+              )}
+            </button>
+
+            <button
+              className="btn btn-secondary btn-compact"
               onClick={handleSaveConfig}
             >
-              <Save size={16} />
+              <Save size={12} />
               Save Config
             </button>
 
             <button
-              className="btn btn-secondary"
+              className="btn btn-secondary btn-compact"
               onClick={handleLoadConfig}
             >
-              <FolderOpen size={16} />
+              <FolderOpen size={12} />
               Load Config
             </button>
           </div>
@@ -256,6 +351,7 @@ function App() {
               ratings={ratings}
               onRateChange={handleRateChange}
               onAIScoreClick={() => setActiveTab('ai')}
+              aiCost={aiCost}
             />
           )}
 

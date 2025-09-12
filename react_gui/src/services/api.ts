@@ -39,10 +39,13 @@ export interface Config {
     excludes: string;
   };
   llm?: {
-    model: string;
-    max_chunk_size: number;
-    default_instructions: string;
-    description: string;
+    model?: string;
+    max_chunk_size?: number;
+    default_instructions?: string;
+    description?: string;
+  };
+  ai_settings?: {
+    max_names?: number;
   };
   word_list_ratings?: Record<string, number>;
   saved_ratings?: Record<string, number>;
@@ -60,6 +63,7 @@ export interface ScoredName {
 
 export interface AIScoringResult {
   scored_names: ScoredName[];
+  total_cost: number;
 }
 
 export interface AIScoringRequest {
