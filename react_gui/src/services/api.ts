@@ -1,12 +1,13 @@
 import axios from 'axios';
 
-const API_BASE_URL = 'http://localhost:5000/api';
+const API_BASE_URL = 'http://localhost:5001/api';
 
 export interface WordList {
   filename: string;
   display_name: string;
   rating: number;
   selected: boolean;
+  word_count: number;
 }
 
 export interface WordListContent {
@@ -21,7 +22,7 @@ export interface Config {
   };
   model?: {
     order: number;
-    prior: number;
+    temperature: number;
     backoff: boolean;
   };
   generation?: {
@@ -100,11 +101,6 @@ class ApiService {
     await axios.post(`${this.baseURL}/config`, config);
   }
 
-  // Name Generation
-  async generateNames(config: Config): Promise<GenerationResult> {
-    const response = await axios.post(`${this.baseURL}/generate`, config);
-    return response.data;
-  }
 
   // Ratings
   async getRatings(): Promise<Record<string, number>> {

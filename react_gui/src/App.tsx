@@ -6,6 +6,7 @@ import MarkovParametersTab from './components/MarkovParametersTab';
 import ResultsTab from './components/ResultsTab';
 import SavedResultsTab from './components/SavedResultsTab';
 import AITab from './components/AITab';
+import GenerationProgressModal from './components/GenerationProgressModal';
 
 function App() {
   const [activeTab, setActiveTab] = useState('training');
@@ -15,6 +16,7 @@ function App() {
   const [ratings, setRatings] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showGenerationModal, setShowGenerationModal] = useState(false);
 
   useEffect(() => {
     loadInitialData();
@@ -43,20 +45,19 @@ function App() {
       return;
     }
 
-    setLoading(true);
     setError(null);
+    setShowGenerationModal(true);
+  };
 
-    try {
-      await apiService.updateConfig(config);
-      const result = await apiService.generateNames(config);
-      setResults(result.names);
-      setAIResults([]); // Clear AI results when generating new names
-      setActiveTab('results'); // Switch to results tab
-    } catch (err: any) {
-      setError(err.response?.data?.error || 'Failed to generate names');
-    } finally {
-      setLoading(false);
-    }
+  const handleGenerationComplete = (names: string[]) => {
+    setResults(names);
+    setAIResults([]); // Clear AI results when generating new names
+    setShowGenerationModal(false);
+    setActiveTab('results'); // Switch to results tab
+  };
+
+  const handleGenerationStop = () => {
+    setShowGenerationModal(false);
   };
 
   const handleSaveConfig = async () => {
@@ -177,19 +178,9 @@ function App() {
           <button
             className="btn btn-primary"
             onClick={handleGenerateNames}
-            disabled={loading}
           >
-            {loading ? (
-              <>
-                <div className="loading-spinner"></div>
-                Generating...
-              </>
-            ) : (
-              <>
-                <Play size={16} />
-                Generate Names
-              </>
-            )}
+            <Play size={16} />
+            Generate Names
           </button>
 
           <button
@@ -215,6 +206,15 @@ function App() {
             <p className="error-message">{error}</p>
           </div>
         )}
+
+        {/* Generation Progress Modal */}
+        <GenerationProgressModal
+          isOpen={showGenerationModal}
+          targetCount={config.generation?.n_words || 20}
+          onStop={handleGenerationStop}
+          onComplete={handleGenerationComplete}
+          config={config}
+        />
       </div>
     </div>
   );

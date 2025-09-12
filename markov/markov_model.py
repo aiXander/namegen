@@ -1,16 +1,17 @@
 import random
+import math
 from typing import List, Dict, Optional
 from collections import defaultdict
 
 
 class MarkovModel:
-    def __init__(self, data: List[str], order: int, prior: float, alphabet: List[str]):
+    def __init__(self, data: List[str], order: int, temperature: float, alphabet: List[str]):
         assert alphabet is not None and data is not None
         assert len(alphabet) > 0 and len(data) > 0
-        assert 0 <= prior <= 1
+        assert temperature > 0, "Temperature must be positive"
         
         self.order = order
-        self.prior = prior
+        self.temperature = temperature
         self.alphabet = alphabet
         
         self.observations: Dict[str, List[str]] = defaultdict(list)
@@ -46,14 +47,45 @@ class MarkovModel:
                 self.observations[key].append(value)
     
     def _build_chains(self) -> None:
-        """Build Markov chains from observations"""
+        """Build Markov chains from observations with temperature scaling"""
         self.chains = {}
         
         for context in self.observations.keys():
-            chain = []
+            raw_counts = []
+            total_count = len(self.observations[context])
+            
+            # Get raw counts for each character
             for prediction in self.alphabet:
                 count = self._count_matches(self.observations[context], prediction)
-                chain.append(self.prior + count)
+                raw_counts.append(count)
+            
+            # Handle temperature scaling
+            if total_count == 0:
+                # No observations for this context, use uniform distribution
+                chain = [1.0 / len(self.alphabet)] * len(self.alphabet)
+            else:
+                if self.temperature == 0:
+                    # Temperature 0: always pick most likely (argmax)
+                    chain = [0.0] * len(self.alphabet)
+                    max_idx = raw_counts.index(max(raw_counts))
+                    chain[max_idx] = 1.0
+                else:
+                    # Convert counts to log probabilities and apply temperature
+                    log_probs = []
+                    for count in raw_counts:
+                        if count == 0:
+                            # Add small epsilon to avoid log(0)
+                            log_prob = math.log(1e-10)
+                        else:
+                            log_prob = math.log(count / total_count)
+                        log_probs.append(log_prob / self.temperature)
+                    
+                    # Convert back to probabilities using softmax
+                    max_log_prob = max(log_probs)
+                    exp_log_probs = [math.exp(lp - max_log_prob) for lp in log_probs]
+                    total_exp = sum(exp_log_probs)
+                    chain = [exp_prob / total_exp for exp_prob in exp_log_probs]
+            
             self.chains[context] = chain
     
     def _count_matches(self, arr: List[str], value: str) -> int:
@@ -61,17 +93,19 @@ class MarkovModel:
         return arr.count(value)
     
     def _select_index(self, chain: List[float]) -> int:
-        """Select index using weighted random selection"""
+        """Select index using weighted random selection from probability distribution"""
         totals = []
         accumulator = 0.0
         
-        for weight in chain:
-            accumulator += weight
+        for prob in chain:
+            accumulator += prob
             totals.append(accumulator)
         
-        rand = random.random() * accumulator
-        for i, total in enumerate(totals):
-            if rand < total:
-                return i
+        # Normalize in case of floating point errors
+        if accumulator > 0:
+            rand = random.random() * accumulator
+            for i, total in enumerate(totals):
+                if rand < total:
+                    return i
         
         return 0

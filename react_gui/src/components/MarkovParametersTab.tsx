@@ -39,12 +39,10 @@ const MarkovParametersTab: React.FC<MarkovParametersTabProps> = ({ config, onCon
         
         {/* Model Order */}
         <div className="form-group">
-          <label className="form-label">
-            Model Order: {modelConfig.order || 3}
-            <span className="text-muted text-sm ml-2">
-              (How many letters to look back when predicting the next letter)
-            </span>
-          </label>
+          <label className="form-label">Model Order: {modelConfig.order || 3}</label>
+          <p className="text-sm text-muted mb-2">
+            How many letters to look back when predicting the next letter
+          </p>
           <input
             type="range"
             min="1"
@@ -53,30 +51,31 @@ const MarkovParametersTab: React.FC<MarkovParametersTabProps> = ({ config, onCon
             onChange={(e) => updateModelConfig({ order: parseInt(e.target.value) })}
             className="range-slider w-full"
           />
-          <div className="text-sm text-muted mt-1">
-            • Low (1-2): More creative, less realistic • High (3-5): More realistic, follows training data closely
+          <div className="text-sm text-muted mt-2">
+            <strong>Low (1-2):</strong> More creative, less realistic<br />
+            <strong>High (3-5):</strong> More realistic, follows training data closely
           </div>
         </div>
 
-        {/* Prior */}
+        {/* Temperature */}
         <div className="form-group">
-          <label className="form-label">
-            Prior (Creativity Factor): {(modelConfig.prior || 0.01).toFixed(4)}
-            <span className="text-muted text-sm ml-2">
-              (Controls randomness vs. following training patterns)
-            </span>
-          </label>
+          <label className="form-label">Temperature (Creativity Factor): {(modelConfig.temperature || 1.0).toFixed(2)}</label>
+          <p className="text-sm text-muted mb-2">
+            Controls randomness vs. following training patterns
+          </p>
           <input
             type="range"
-            min="0.001"
-            max="0.1"
-            step="0.001"
-            value={modelConfig.prior || 0.01}
-            onChange={(e) => updateModelConfig({ prior: parseFloat(e.target.value) })}
+            min="0.1"
+            max="3.0"
+            step="0.1"
+            value={modelConfig.temperature || 1.0}
+            onChange={(e) => updateModelConfig({ temperature: parseFloat(e.target.value) })}
             className="range-slider w-full"
           />
-          <div className="text-sm text-muted mt-1">
-            • Low (0.001-0.01): Stick to training patterns • High (0.05-0.1): More creative and varied
+          <div className="text-sm text-muted mt-2">
+            <strong>Low (0.1-0.5):</strong> Conservative, follows training patterns<br />
+            <strong>Medium (0.8-1.2):</strong> Balanced creativity<br />
+            <strong>High (1.5-3.0):</strong> Very creative and varied
           </div>
         </div>
 
@@ -88,63 +87,85 @@ const MarkovParametersTab: React.FC<MarkovParametersTabProps> = ({ config, onCon
               checked={modelConfig.backoff !== false}
               onChange={(e) => updateModelConfig({ backoff: e.target.checked })}
             />
-            <label className="form-label">
-              Use Backoff
-              <span className="text-muted text-sm ml-2">
-                (Fall back to simpler patterns when complex ones aren't found)
-              </span>
-            </label>
+            <label className="form-label">Use Backoff</label>
           </div>
-          <div className="text-sm text-muted mt-1">
-            • Enabled: More reliable generation, smoother names • Disabled: Stricter patterns, may fail occasionally
+          <p className="text-sm text-muted mb-2">
+            Fall back to simpler patterns when complex ones aren't found
+          </p>
+          <div className="text-sm text-muted">
+            <strong>Enabled:</strong> More reliable generation, smoother names<br />
+            <strong>Disabled:</strong> Stricter patterns, may fail occasionally
           </div>
         </div>
       </div>
 
-      {/* Generation Parameters */}
+      {/* Generation Settings */}
       <div className="card mb-4">
         <div className="card-header">Generation Settings</div>
         
-        <div className="form-group">
-          <label className="form-label">Number of Names</label>
-          <input
-            type="number"
-            min="1"
-            max="100"
-            value={generationConfig.n_words || 20}
-            onChange={(e) => updateGenerationConfig({ n_words: parseInt(e.target.value) })}
-            className="form-input"
-          />
-        </div>
-      </div>
-
-      {/* Length Constraints */}
-      <div className="card mb-4">
-        <div className="card-header">Length Constraints</div>
-        
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* Number of Names */}
           <div className="form-group">
-            <label className="form-label">Min Length</label>
+            <label className="form-label">Number of Names</label>
             <input
               type="number"
               min="1"
-              max="20"
-              value={generationConfig.min_length || 4}
-              onChange={(e) => updateGenerationConfig({ min_length: parseInt(e.target.value) })}
+              max="100"
+              value={generationConfig.n_words || 20}
+              onChange={(e) => updateGenerationConfig({ n_words: parseInt(e.target.value) })}
               className="form-input"
             />
           </div>
-          
+
+          {/* Length Range */}
           <div className="form-group">
-            <label className="form-label">Max Length</label>
-            <input
-              type="number"
-              min="1"
-              max="20"
-              value={generationConfig.max_length || 12}
-              onChange={(e) => updateGenerationConfig({ max_length: parseInt(e.target.value) })}
-              className="form-input"
-            />
+            <label className="form-label">Length Range</label>
+            <div className="flex items-center gap-4 mt-2">
+              <div style={{ width: '70%' }}>
+                <div className="dual-range-container">
+                  <div className="dual-range-track">
+                    <div 
+                      className="dual-range-progress"
+                      style={{
+                        left: `${((generationConfig.min_length || 4) - 1) / 19 * 100}%`,
+                        right: `${100 - ((generationConfig.max_length || 12) - 1) / 19 * 100}%`
+                      }}
+                    />
+                  </div>
+                  <input
+                    type="range"
+                    min="1"
+                    max="20"
+                    value={generationConfig.min_length || 4}
+                    onChange={(e) => {
+                      const value = parseInt(e.target.value);
+                      if (value <= (generationConfig.max_length || 12)) {
+                        updateGenerationConfig({ min_length: value });
+                      }
+                    }}
+                    className="dual-range-slider"
+                    style={{ zIndex: 1 }}
+                  />
+                  <input
+                    type="range"
+                    min="1"
+                    max="20"
+                    value={generationConfig.max_length || 12}
+                    onChange={(e) => {
+                      const value = parseInt(e.target.value);
+                      if (value >= (generationConfig.min_length || 4)) {
+                        updateGenerationConfig({ max_length: value });
+                      }
+                    }}
+                    className="dual-range-slider"
+                    style={{ zIndex: 2 }}
+                  />
+                </div>
+              </div>
+              <span className="text-sm font-medium whitespace-nowrap">
+                {generationConfig.min_length || 4} - {generationConfig.max_length || 12} letters
+              </span>
+            </div>
           </div>
         </div>
       </div>

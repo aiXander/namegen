@@ -5,17 +5,17 @@ from .generator import Generator
 
 
 class NameGenerator:
-    def __init__(self, data: List[str], order: int, prior: float, backoff: bool = False):
+    def __init__(self, data: List[str], order: int, temperature: float, backoff: bool = False):
         """
         Create a procedural name generator.
         
         Args:
             data: Training data for the generator, an array of words
             order: Highest order of model to use - models 1 to order will be generated
-            prior: The dirichlet prior/additive smoothing "randomness" factor
+            temperature: Temperature for sampling (0=deterministic, 1=training distribution, >1=more random)
             backoff: Whether to fall back to lower order models when highest order model fails
         """
-        self.generator = Generator(data, order, prior, backoff)
+        self.generator = Generator(data, order, temperature, backoff)
     
     def generate_name(self, min_length: int = 1, max_length: int = 20, 
                      starts_with: str = "", ends_with: str = "", 
@@ -41,8 +41,8 @@ class NameGenerator:
         
         # Check constraints
         if (min_length <= len(name) <= max_length and
-            name.startswith(starts_with) and
-            name.endswith(ends_with) and
+            (not starts_with or name.startswith(starts_with)) and
+            (not ends_with or name.endswith(ends_with)) and
             (not includes or includes in name) and
             (not excludes or excludes not in name) and
             (not regex_pattern or re.match(regex_pattern, name))):
@@ -75,18 +75,32 @@ class NameGenerator:
         names = []
         start_time = time.time()
         max_total_time = max_time_per_name * n
+        attempts = 0
+        max_attempts_per_name = 1000
         
         while len(names) < n:
             name = self.generate_name(min_length, max_length, starts_with, 
                                     ends_with, includes, excludes, regex_pattern)
+            attempts += 1
+            
             if name is not None:
                 names.append(name)
+                attempts = 0  # Reset attempts counter when we find a valid name
             
-            # Safety check to prevent infinite loops - if we've spent too much time
-            # and haven't found any valid names recently, break
-            if (time.time() - start_time) > max_total_time:
-                # If we haven't found any names at all, break to avoid infinite loop
-                if len(names) == 0:
-                    break
+            # Safety check to prevent infinite loops - break if we've tried too many times
+            # or spent too much total time
+            current_time = time.time()
+            if (current_time - start_time) > max_total_time:
+                # If we haven't found enough names but have some, return what we have
+                break
+            
+            # If we've tried many times without success and have no names, give more time
+            if attempts > max_attempts_per_name and len(names) == 0:
+                # Increase max_total_time if we haven't found any names yet
+                max_total_time *= 2
+                attempts = 0
+            elif attempts > max_attempts_per_name:
+                # If we have some names but struggling to find more, stop trying
+                break
         
         return names

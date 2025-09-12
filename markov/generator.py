@@ -4,13 +4,13 @@ from .markov_model import MarkovModel
 
 
 class Generator:
-    def __init__(self, data: List[str], order: int, prior: float, backoff: bool = False):
+    def __init__(self, data: List[str], order: int, temperature: float, backoff: bool = False):
         assert data is not None
         assert order >= 1
-        assert prior >= 0
+        assert temperature > 0
         
         self.order = order
-        self.prior = prior
+        self.temperature = temperature
         self.backoff = backoff
         
         # Build alphabet from training data
@@ -29,10 +29,10 @@ class Generator:
             # Create models from highest to lowest order
             for i in range(order):
                 model_order = order - i
-                self.models.append(MarkovModel(data.copy(), model_order, prior, domain))
+                self.models.append(MarkovModel(data.copy(), model_order, temperature, domain))
         else:
             # Create single model of specified order
-            self.models.append(MarkovModel(data.copy(), order, prior, domain))
+            self.models.append(MarkovModel(data.copy(), order, temperature, domain))
     
     def generate(self) -> str:
         """Generate a word"""

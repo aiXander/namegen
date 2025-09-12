@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Eye, Shuffle } from 'lucide-react';
+import { Eye, Shuffle, ChevronUp, ChevronDown } from 'lucide-react';
 import { apiService, WordList, WordListContent } from '../services/api';
 import StarRating from './StarRating';
 import Modal from './Modal';
@@ -18,6 +18,8 @@ const TrainingDataTab: React.FC<TrainingDataTabProps> = ({ config, onConfigChang
   const [viewMode, setViewMode] = useState<'sorted' | 'random'>('sorted');
   const [minScore, setMinScore] = useState(0);
   const [maxScore, setMaxScore] = useState(5);
+  const [sortColumn, setSortColumn] = useState<'name' | 'word_count' | 'rating'>('name');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
 
   useEffect(() => {
     loadWordLists();
@@ -108,6 +110,51 @@ const TrainingDataTab: React.FC<TrainingDataTabProps> = ({ config, onConfigChang
     }
   };
 
+  const handleSort = (column: 'name' | 'word_count' | 'rating') => {
+    if (sortColumn === column) {
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortColumn(column);
+      setSortDirection('asc');
+    }
+  };
+
+  const getSortedWordLists = () => {
+    const sorted = [...wordLists].sort((a, b) => {
+      let aValue, bValue;
+      
+      switch (sortColumn) {
+        case 'name':
+          aValue = a.display_name.toLowerCase();
+          bValue = b.display_name.toLowerCase();
+          break;
+        case 'word_count':
+          aValue = a.word_count;
+          bValue = b.word_count;
+          break;
+        case 'rating':
+          aValue = a.rating;
+          bValue = b.rating;
+          break;
+        default:
+          return 0;
+      }
+      
+      if (aValue < bValue) return sortDirection === 'asc' ? -1 : 1;
+      if (aValue > bValue) return sortDirection === 'asc' ? 1 : -1;
+      return 0;
+    });
+    
+    return sorted;
+  };
+
+  const getTotalSelectedWords = () => {
+    const selectedSources = config.training_data?.sources || [];
+    return wordLists
+      .filter(wordList => selectedSources.includes(wordList.filename))
+      .reduce((total, wordList) => total + wordList.word_count, 0);
+  };
+
   const getDisplayedWords = () => {
     if (!selectedWordList) return [];
     const words = [...selectedWordList.words];
@@ -138,84 +185,160 @@ const TrainingDataTab: React.FC<TrainingDataTabProps> = ({ config, onConfigChang
 
   return (
     <div>
-      <h2 className="text-xl font-bold mb-4">Training Data Selection</h2>
-      
-      {/* Control buttons */}
-      <div className="flex gap-2 mb-4">
-        <button className="btn btn-secondary" onClick={handleSelectAll}>
-          Select All
-        </button>
-        <button className="btn btn-secondary" onClick={handleDeselectAll}>
-          Deselect All
-        </button>
+      {/* Total training words indicator */}
+      <div className="card mb-4">
+        <div className="flex items-center gap-3">
+          <span className="text-lg font-semibold text-primary">
+            Total Training Words: {getTotalSelectedWords().toLocaleString()}
+          </span>
+          <span className="text-sm text-muted">
+            ({selectedSources.length} file{selectedSources.length !== 1 ? 's' : ''} selected)
+          </span>
+        </div>
       </div>
 
       {/* Score range selection */}
       <div className="card mb-4">
         <div className="card-header">Select by Score Range</div>
         <div className="flex items-center gap-4 mb-4">
-          <div className="flex items-center gap-2">
-            <label className="form-label">Min:</label>
-            <input
-              type="range"
-              min="0"
-              max="5"
-              value={minScore}
-              onChange={(e) => setMinScore(parseInt(e.target.value))}
-              className="range-slider"
-            />
-            <span className="text-sm w-4">{minScore}</span>
+          <div style={{ width: '50%' }}>
+            <div className="dual-range-container">
+              <div className="dual-range-track">
+                <div 
+                  className="dual-range-progress"
+                  style={{
+                    left: `${(minScore / 5) * 100}%`,
+                    right: `${100 - (maxScore / 5) * 100}%`
+                  }}
+                />
+              </div>
+              <input
+                type="range"
+                min="0"
+                max="5"
+                value={minScore}
+                onChange={(e) => {
+                  const value = parseInt(e.target.value);
+                  if (value <= maxScore) setMinScore(value);
+                }}
+                className="dual-range-slider"
+                style={{ zIndex: 1 }}
+              />
+              <input
+                type="range"
+                min="0"
+                max="5"
+                value={maxScore}
+                onChange={(e) => {
+                  const value = parseInt(e.target.value);
+                  if (value >= minScore) setMaxScore(value);
+                }}
+                className="dual-range-slider"
+                style={{ zIndex: 2 }}
+              />
+            </div>
           </div>
-          <div className="flex items-center gap-2">
-            <label className="form-label">Max:</label>
-            <input
-              type="range"
-              min="0"
-              max="5"
-              value={maxScore}
-              onChange={(e) => setMaxScore(parseInt(e.target.value))}
-              className="range-slider"
-            />
-            <span className="text-sm w-4">{maxScore}</span>
-          </div>
+          <span className="text-sm font-medium whitespace-nowrap">
+            Range: {minScore} - {maxScore}
+          </span>
           <button className="btn btn-primary" onClick={handleSelectByScore}>
             Apply Range
+          </button>
+          <button className="btn btn-secondary" onClick={handleSelectAll}>
+            Select All
+          </button>
+          <button className="btn btn-secondary" onClick={handleDeselectAll}>
+            Deselect All
           </button>
         </div>
       </div>
 
-      {/* Word lists */}
-      <div className="space-y-2 max-h-96 overflow-y-auto">
-        {wordLists.map((wordList) => (
-          <div key={wordList.filename} className="card">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <input
-                  type="checkbox"
-                  checked={selectedSources.includes(wordList.filename)}
-                  onChange={() => handleWordListToggle(wordList.filename)}
-                  className="w-4 h-4"
-                />
-                <span className="font-medium">{wordList.display_name}</span>
-              </div>
-              
-              <div className="flex items-center gap-3">
-                <button
-                  className="btn btn-small btn-secondary"
-                  onClick={() => handleViewWordList(wordList.filename)}
-                >
-                  <Eye size={14} />
-                  View
-                </button>
-                <StarRating
-                  rating={wordList.rating}
-                  onRate={(rating) => handleRateWordList(wordList.filename, rating)}
-                  size="small"
-                />
-              </div>
-            </div>
-          </div>
-        ))}
+      {/* Word lists table */}
+      <div className="max-h-96 overflow-y-auto">
+        <table className="w-full">
+          <thead className="sticky top-0 bg-primary border-b border-border-color">
+            <tr>
+              <th className="text-left py-3 px-4 w-12">
+                <span className="text-sm font-medium text-primary">Select</span>
+              </th>
+              <th 
+                className="text-left py-3 px-4 cursor-pointer hover:bg-bg-hover"
+                onClick={() => handleSort('name')}
+              >
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium text-primary">Name</span>
+                  {sortColumn === 'name' && (
+                    sortDirection === 'asc' ? <ChevronUp size={14} /> : <ChevronDown size={14} />
+                  )}
+                </div>
+              </th>
+              <th 
+                className="text-left py-3 px-4 cursor-pointer hover:bg-bg-hover w-32"
+                onClick={() => handleSort('word_count')}
+              >
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium text-primary">Word Count</span>
+                  {sortColumn === 'word_count' && (
+                    sortDirection === 'asc' ? <ChevronUp size={14} /> : <ChevronDown size={14} />
+                  )}
+                </div>
+              </th>
+              <th 
+                className="text-left py-3 px-4 cursor-pointer hover:bg-bg-hover w-32"
+                onClick={() => handleSort('rating')}
+              >
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium text-primary">Rating</span>
+                  {sortColumn === 'rating' && (
+                    sortDirection === 'asc' ? <ChevronUp size={14} /> : <ChevronDown size={14} />
+                  )}
+                </div>
+              </th>
+              <th className="text-left py-3 px-4 w-24">
+                <span className="text-sm font-medium text-primary">Actions</span>
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {getSortedWordLists().map((wordList) => {
+              const isSelected = selectedSources.includes(wordList.filename);
+              return (
+                <tr key={wordList.filename} className={`border-b border-border-color hover:bg-bg-hover ${isSelected ? 'selected-row' : ''}`}>
+                  <td className="py-3 px-4">
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onChange={() => handleWordListToggle(wordList.filename)}
+                      className="w-4 h-4"
+                    />
+                  </td>
+                  <td className="py-3 px-4">
+                    <span className="font-medium">{wordList.display_name}</span>
+                  </td>
+                  <td className="py-3 px-4">
+                    <span className="text-sm">{wordList.word_count.toLocaleString()}</span>
+                  </td>
+                  <td className="py-3 px-4">
+                    <StarRating
+                      rating={wordList.rating}
+                      onRate={(rating) => handleRateWordList(wordList.filename, rating)}
+                      size="small"
+                    />
+                  </td>
+                  <td className="py-3 px-4">
+                    <button
+                      className="btn btn-small btn-secondary"
+                      onClick={() => handleViewWordList(wordList.filename)}
+                    >
+                      <Eye size={14} />
+                      View
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
       </div>
 
       {/* Word list content modal */}

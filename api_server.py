@@ -5,13 +5,14 @@ API Server for Markov Name Generator React GUI
 Provides REST API endpoints for the React frontend to communicate with the Python backend
 """
 
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, Response
 from flask_cors import CORS
 import os
 import json
 import yaml
 import threading
-from typing import Dict, List, Any
+import time
+from typing import Dict, List, Any, Generator
 from markov_namegen import MarkovNameGenerator
 from ai.llm_scorer import LLMScorer
 
@@ -76,16 +77,28 @@ word_list_ratings = current_config.get('word_list_ratings', {})
 
 @app.route('/api/word-lists', methods=['GET'])
 def get_word_lists_api():
-    """Get available word lists with ratings"""
+    """Get available word lists with ratings and word counts"""
     word_lists = get_word_lists()
     result = []
     for word_list in word_lists:
         display_name = word_list.replace('_', ' ').replace('.txt', '').title()
+        
+        # Efficiently count words without loading full content
+        word_count = 0
+        try:
+            file_path = os.path.join("word_lists", word_list)
+            with open(file_path, 'r') as f:
+                word_count = sum(1 for line in f if line.strip())
+        except Exception as e:
+            print(f"Error counting words in {word_list}: {e}")
+            word_count = 0
+        
         result.append({
             'filename': word_list,
             'display_name': display_name,
             'rating': word_list_ratings.get(word_list, 0),
-            'selected': word_list in current_config.get('training_data', {}).get('sources', [])
+            'selected': word_list in current_config.get('training_data', {}).get('sources', []),
+            'word_count': word_count
         })
     return jsonify(result)
 
@@ -133,57 +146,6 @@ def update_config():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-@app.route('/api/generate', methods=['POST'])
-def generate_names():
-    """Generate names based on configuration"""
-    global generator, cached_generator, cached_word_list_hash, cached_model_params_hash
-    
-    try:
-        config = request.json
-        current_config.update(config)
-        
-        # Check if any word lists are selected
-        selected_sources = config.get('training_data', {}).get('sources', [])
-        if not selected_sources:
-            return jsonify({'error': 'Please select at least one word list'}), 400
-        
-        # Create generator (with caching logic similar to GUI)
-        import hashlib
-        current_word_list_hash = hashlib.md5(str(sorted(selected_sources)).encode()).hexdigest()
-        model_params = config.get('model', {})
-        current_model_params_hash = hashlib.md5(str(model_params).encode()).hexdigest()
-        
-        if (cached_generator is not None and
-            cached_word_list_hash == current_word_list_hash and
-            cached_model_params_hash == current_model_params_hash):
-            generator = cached_generator
-        else:
-            generator = MarkovNameGenerator()
-            generator.config = current_config
-            generator.training_words = generator._load_training_data()
-            
-            from markov.name_generator import NameGenerator
-            generator.generator = NameGenerator(
-                data=generator.training_words,
-                order=model_params.get('order', 3),
-                prior=model_params.get('prior', 0.01),
-                backoff=model_params.get('backoff', True)
-            )
-            
-            cached_generator = generator
-            cached_word_list_hash = current_word_list_hash
-            cached_model_params_hash = current_model_params_hash
-        
-        # Generate names
-        names = generator.generate_names()
-        
-        return jsonify({
-            'names': names,
-            'count': len(names)
-        })
-        
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/ratings', methods=['GET'])
 def get_ratings():
@@ -278,6 +240,165 @@ def get_ai_models():
         return jsonify({'models': models})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+@app.route('/api/generate-stream', methods=['POST'])
+def generate_names_stream():
+    """Generate names with streaming progress updates"""
+    global generator, cached_generator, cached_word_list_hash, cached_model_params_hash
+    
+    try:
+        config = request.json
+        current_config.update(config)
+        
+        # Check if any word lists are selected
+        selected_sources = config.get('training_data', {}).get('sources', [])
+        if not selected_sources:
+            def error_stream():
+                yield f"data: {json.dumps({'type': 'error', 'message': 'Please select at least one word list'})}\n\n"
+            return Response(error_stream(), mimetype='text/plain')
+        
+        # Create generator (with caching logic similar to GUI)
+        import hashlib
+        current_word_list_hash = hashlib.md5(str(sorted(selected_sources)).encode()).hexdigest()
+        model_params = config.get('model', {})
+        current_model_params_hash = hashlib.md5(str(model_params).encode()).hexdigest()
+        
+        if (cached_generator is not None and
+            cached_word_list_hash == current_word_list_hash and
+            cached_model_params_hash == current_model_params_hash):
+            generator = cached_generator
+        else:
+            generator = MarkovNameGenerator()
+            generator.config = current_config
+            generator.training_words = generator._load_training_data()
+            
+            from markov.name_generator import NameGenerator
+            generator.generator = NameGenerator(
+                data=generator.training_words,
+                order=model_params.get('order', 3),
+                temperature=model_params.get('temperature', 1.0),
+                backoff=model_params.get('backoff', True)
+            )
+            
+            cached_generator = generator
+            cached_word_list_hash = current_word_list_hash
+            cached_model_params_hash = current_model_params_hash
+        
+        # Update configuration with defaults
+        if 'filtering' not in config:
+            config['filtering'] = {
+                'remove_duplicates': True,
+                'exclude_training_words': False,
+                'min_edit_distance': 0
+            }
+        if 'output' not in config:
+            config['output'] = {
+                'sort_by': 'random',
+                'sort_ascending': True
+            }
+        
+        generator.config.update(config)
+        
+        def generate_stream():
+            try:
+                # Generate names with streaming
+                for name in generate_names_with_progress(generator, config):
+                    yield f"data: {json.dumps({'type': 'progress', 'name': name})}\n\n"
+                    time.sleep(0.01)  # Small delay to prevent overwhelming the frontend
+                
+                yield f"data: {json.dumps({'type': 'complete'})}\n\n"
+            except Exception as e:
+                yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+        
+        return Response(generate_stream(), mimetype='text/plain')
+        
+    except Exception as e:
+        def error_stream(error_msg):
+            yield f"data: {json.dumps({'type': 'error', 'message': error_msg})}\n\n"
+        return Response(error_stream(str(e)), mimetype='text/plain')
+
+def generate_names_with_progress(generator: MarkovNameGenerator, config: Dict[str, Any]) -> Generator[str, None, None]:
+    """Generate names one by one, yielding each valid name as it's found"""
+    gen_config = config.get('generation', {})
+    
+    target_count = gen_config.get('n_words', 20)
+    min_length = gen_config.get('min_length', 4)
+    max_length = gen_config.get('max_length', 12)
+    starts_with = gen_config.get('starts_with', '')
+    ends_with = gen_config.get('ends_with', '')
+    includes = gen_config.get('includes', '')
+    excludes = gen_config.get('excludes', '')
+    max_time_per_name = gen_config.get('max_time_per_name', 1.0)
+    regex_pattern = gen_config.get('regex_pattern') if gen_config.get('regex_pattern') else None
+    
+    names = []
+    start_time = time.time()
+    last_success_time = start_time
+    max_total_time = max_time_per_name * target_count
+    attempts_since_last_success = 0
+    max_attempts_per_name = 10000
+    
+    while len(names) < target_count:
+        name = generator.generator.generate_name(
+            min_length=min_length,
+            max_length=max_length,
+            starts_with=starts_with,
+            ends_with=ends_with,
+            includes=includes,
+            excludes=excludes,
+            regex_pattern=regex_pattern
+        )
+        attempts_since_last_success += 1
+        
+        if name is not None:
+            # Apply filtering to this single name
+            if should_keep_name(name, names, generator, config):
+                names.append(name)
+                yield name
+                attempts_since_last_success = 0  # Reset attempts counter when we find a valid name
+                last_success_time = time.time()  # Reset success timer
+            elif attempts_since_last_success % 1000 == 0:
+                print(f"Generated name '{name}' rejected by filters (attempt {attempts_since_last_success})")
+        elif attempts_since_last_success % 1000 == 0:
+            print(f"No name generated (attempt {attempts_since_last_success})")
+        
+        # Safety check to prevent infinite loops
+        current_time = time.time()
+        time_since_last_success = current_time - last_success_time
+        
+        # Stop if we haven't found a name in too long OR total time exceeded
+        if time_since_last_success > max_time_per_name * 2 or (current_time - start_time) > max_total_time:
+            print(f"Stopping generation: time_since_last_success={time_since_last_success:.3f}s, max_allowed={max_time_per_name * 2:.3f}s, total_time={(current_time - start_time):.3f}s, max_total={max_total_time:.3f}s, names_found={len(names)}")
+            break
+        
+        # If we've tried many times without success, give up
+        if attempts_since_last_success > max_attempts_per_name:
+            print(f"Stopping generation: attempts_since_last_success={attempts_since_last_success}, max_allowed={max_attempts_per_name}, names_found={len(names)}")
+            break
+
+def should_keep_name(name: str, existing_names: List[str], generator: MarkovNameGenerator, config: Dict[str, Any]) -> bool:
+    """Check if a name should be kept based on filtering rules"""
+    filter_config = config.get('filtering', {})
+    
+    # Remove duplicates
+    if filter_config.get('remove_duplicates', True):
+        if name in existing_names:
+            return False
+    
+    # Remove names identical to training data
+    if filter_config.get('exclude_training_words', True):
+        if name in generator.training_words:
+            return False
+    
+    # Remove names too similar to training data
+    min_distance = filter_config.get('min_edit_distance', 0)
+    if min_distance > 0:
+        from markov_namegen import edit_distance
+        for training_word in generator.training_words:
+            if edit_distance(name, training_word) < min_distance:
+                return False
+    
+    return True
 
 if __name__ == '__main__':
     print("Starting Markov Name Generator API Server...")

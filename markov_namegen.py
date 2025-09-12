@@ -73,19 +73,19 @@ class MarkovNameGenerator:
     
     def generate_names(self) -> List[str]:
         """Generate names according to configuration"""
-        gen_config = self.config['generation']
+        gen_config = self.config.get('generation', {})
         
         # Generate names
         names = self.generator.generate_names(
-            n=gen_config['n_words'],
-            min_length=gen_config['min_length'],
-            max_length=gen_config['max_length'],
-            starts_with=gen_config['starts_with'],
-            ends_with=gen_config['ends_with'],
-            includes=gen_config['includes'],
-            excludes=gen_config['excludes'],
-            max_time_per_name=gen_config['max_time_per_name'],
-            regex_pattern=gen_config['regex_pattern'] if gen_config['regex_pattern'] else None
+            n=gen_config.get('n_words', 20),
+            min_length=gen_config.get('min_length', 4),
+            max_length=gen_config.get('max_length', 12),
+            starts_with=gen_config.get('starts_with', ''),
+            ends_with=gen_config.get('ends_with', ''),
+            includes=gen_config.get('includes', ''),
+            excludes=gen_config.get('excludes', ''),
+            max_time_per_name=gen_config.get('max_time_per_name', 1.0),
+            regex_pattern=gen_config.get('regex_pattern') if gen_config.get('regex_pattern') else None
         )
         
         # Apply filtering
@@ -98,21 +98,21 @@ class MarkovNameGenerator:
     
     def _filter_names(self, names: List[str]) -> List[str]:
         """Apply filtering criteria to generated names"""
-        filter_config = self.config['filtering']
+        filter_config = self.config.get('filtering', {})
         filtered_names = names.copy()
         
         # Remove duplicates
-        if filter_config['remove_duplicates']:
+        if filter_config.get('remove_duplicates', True):
             filtered_names = list(set(filtered_names))
         
         # Remove names identical to training data
-        if filter_config['exclude_training_words']:
+        if filter_config.get('exclude_training_words', True):
             training_set = set(self.training_words)
             filtered_names = [name for name in filtered_names if name not in training_set]
         
         # Remove names too similar to training data
-        if filter_config['min_edit_distance'] > 0:
-            min_distance = filter_config['min_edit_distance']
+        min_distance = filter_config.get('min_edit_distance', 0)
+        if min_distance > 0:
             filtered_names = [
                 name for name in filtered_names
                 if all(edit_distance(name, training_word) >= min_distance 
@@ -123,9 +123,9 @@ class MarkovNameGenerator:
     
     def _sort_names(self, names: List[str]) -> List[str]:
         """Sort names according to configuration"""
-        output_config = self.config['output']
-        sort_by = output_config['sort_by']
-        ascending = output_config['sort_ascending']
+        output_config = self.config.get('output', {})
+        sort_by = output_config.get('sort_by', 'random')
+        ascending = output_config.get('sort_ascending', True)
         
         if sort_by == "length":
             names.sort(key=len, reverse=not ascending)
