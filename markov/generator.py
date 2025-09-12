@@ -1,7 +1,8 @@
 import random
-from typing import List, Optional
+from typing import List, Optional, Tuple
 from .markov_model import MarkovModel
 from .constraint_sampler import ConstraintSampler, GenerationConstraints
+from .multi_component_sampler import MultiComponentSampler, ComponentConstraints
 
 
 class Generator:
@@ -40,6 +41,8 @@ class Generator:
         
         # Initialize constraint sampler with primary model
         self.constraint_sampler = ConstraintSampler(self.models[0])
+        # Initialize multi-component sampler with primary model
+        self.multi_component_sampler = MultiComponentSampler(self.models[0])
     
     def generate(self) -> str:
         """Generate a word"""
@@ -101,3 +104,42 @@ class Generator:
         )
         
         return self.constraint_sampler.generate_constrained_name(constraints)
+    
+    def generate_with_components(self, components: List[str], min_length: int = 6, max_length: int = 12,
+                               starts_with: str = "", ends_with: str = "", 
+                               includes: str = "", excludes: str = "",
+                               component_order: Optional[List[int]] = None,
+                               component_separation: Tuple[int, int] = (0, 3),
+                               regex_pattern: Optional[str] = None) -> Optional[str]:
+        """
+        Generate a word using multi-component sampling.
+        
+        Args:
+            components: List of required components (e.g., ["co", "mind"])
+            min_length: Minimum word length
+            max_length: Maximum word length
+            starts_with: Required prefix
+            ends_with: Required suffix
+            includes: Required substring (applied as posterior filter)
+            excludes: Forbidden substring
+            component_order: Specific ordering of components (indices into components list)
+            component_separation: Min/max characters between components
+            regex_pattern: Optional regex pattern to match
+            
+        Returns:
+            Generated word meeting constraints, or None if constraints impossible
+        """
+        constraints = ComponentConstraints(
+            min_length=min_length,
+            max_length=max_length,
+            starts_with=starts_with,
+            ends_with=ends_with,
+            includes=includes,
+            excludes=excludes,
+            regex_pattern=regex_pattern,
+            components=components,
+            component_order=component_order,
+            component_separation=component_separation
+        )
+        
+        return self.multi_component_sampler.generate_with_components(constraints)

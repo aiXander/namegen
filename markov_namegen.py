@@ -78,18 +78,38 @@ class MarkovNameGenerator:
         """Generate names according to configuration"""
         gen_config = self.config.get('generation', {})
         
-        # Generate names
-        names = self.generator.generate_names(
-            n=gen_config.get('n_words', 20),
-            min_length=gen_config.get('min_length', 4),
-            max_length=gen_config.get('max_length', 12),
-            starts_with=gen_config.get('starts_with', ''),
-            ends_with=gen_config.get('ends_with', ''),
-            includes=gen_config.get('includes', ''),
-            excludes=gen_config.get('excludes', ''),
-            max_time_per_name=gen_config.get('max_time_per_name', 1.0),
-            regex_pattern=gen_config.get('regex_pattern') if gen_config.get('regex_pattern') else None
-        )
+        # Check if components are specified
+        components = gen_config.get('components', [])
+        
+        if components:
+            # Use multi-component generation
+            names = self.generator.generate_names_with_components(
+                components=components,
+                n=gen_config.get('n_words', 20),
+                min_length=gen_config.get('min_length', 6),
+                max_length=gen_config.get('max_length', 12),
+                starts_with=gen_config.get('starts_with', ''),
+                ends_with=gen_config.get('ends_with', ''),
+                includes=gen_config.get('includes', ''),
+                excludes=gen_config.get('excludes', ''),
+                component_order=gen_config.get('component_order'),
+                component_separation=tuple(gen_config.get('component_separation', [0, 3])),
+                max_time_per_name=gen_config.get('max_time_per_name', 1.0),
+                regex_pattern=gen_config.get('regex_pattern') if gen_config.get('regex_pattern') else None
+            )
+        else:
+            # Use standard generation
+            names = self.generator.generate_names(
+                n=gen_config.get('n_words', 20),
+                min_length=gen_config.get('min_length', 4),
+                max_length=gen_config.get('max_length', 12),
+                starts_with=gen_config.get('starts_with', ''),
+                ends_with=gen_config.get('ends_with', ''),
+                includes=gen_config.get('includes', ''),
+                excludes=gen_config.get('excludes', ''),
+                max_time_per_name=gen_config.get('max_time_per_name', 1.0),
+                regex_pattern=gen_config.get('regex_pattern') if gen_config.get('regex_pattern') else None
+            )
         
         # Apply filtering
         names = self._filter_names(names)

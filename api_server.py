@@ -258,7 +258,7 @@ def ai_score_names():
             if rating > 0:
                 scored_examples.append((name, rating))
         scored_examples.sort(key=lambda x: x[1], reverse=True)
-        scored_examples = scored_examples[:20]  # Limit to top 20
+        scored_examples = scored_examples[:50]  # Limit to top 50
         
         # Initialize LLM scorer
         llm_scorer = LLMScorer(model=model, max_chunk_size=max_chunk_size)
@@ -433,9 +433,15 @@ def generate_names_with_progress(generator: MarkovNameGenerator, config: Dict[st
     max_time_per_name = gen_config.get('max_time_per_name', 2.0)
     regex_pattern = gen_config.get('regex_pattern') if gen_config.get('regex_pattern') else None
     
+    # Multi-component parameters
+    components = gen_config.get('components', [])
+    component_order = gen_config.get('component_order')
+    component_separation = tuple(gen_config.get('component_separation', [0, 3]))
+    
     print(f"🎯 Target: {target_count} names")
     print(f"📏 Length: {min_length}-{max_length}")
     print(f"🔍 Constraints: starts='{starts_with}', ends='{ends_with}', includes='{includes}', excludes='{excludes}'")
+    print(f"🧩 Components: {components}, order={component_order}, separation={component_separation}")
     print(f"⏱️  Max time per name: {max_time_per_name}s")
     print(f"🧠 Generator ready: {generator is not None}")
     print(f"🧠 Inner generator: {generator.generator if generator else 'None'}")
@@ -454,15 +460,31 @@ def generate_names_with_progress(generator: MarkovNameGenerator, config: Dict[st
     
     while len(names) < target_count:
         try:
-            name = generator.generator.generate_name(
-                min_length=min_length,
-                max_length=max_length,
-                starts_with=starts_with,
-                ends_with=ends_with,
-                includes=includes,
-                excludes=excludes,
-                regex_pattern=regex_pattern
-            )
+            # Use component-based generation if components are specified
+            if components:
+                name = generator.generator.generate_name_with_components(
+                    components=components,
+                    min_length=min_length,
+                    max_length=max_length,
+                    starts_with=starts_with,
+                    ends_with=ends_with,
+                    includes=includes,
+                    excludes=excludes,
+                    component_order=component_order,
+                    component_separation=component_separation,
+                    regex_pattern=regex_pattern
+                )
+            else:
+                # Use standard generation
+                name = generator.generator.generate_name(
+                    min_length=min_length,
+                    max_length=max_length,
+                    starts_with=starts_with,
+                    ends_with=ends_with,
+                    includes=includes,
+                    excludes=excludes,
+                    regex_pattern=regex_pattern
+                )
             attempts_since_last_success += 1
         except Exception as e:
             print(f"\n❌ ERROR during name generation: {str(e)}")

@@ -179,7 +179,7 @@ class LLMScorer:
         
         # Add scored examples
         if scored_examples:
-            examples = [f'"{name}": {score}' for name, score in scored_examples[:10]]
+            examples = [f'"{name}": {score}' for name, score in scored_examples]
             prompt_parts.append(f"Example scored names: {{{', '.join(examples)}}}")
         
         # Add instructions exactly as provided

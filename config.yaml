@@ -5,13 +5,15 @@ filtering:
   min_edit_distance: 2
   remove_duplicates: true
 generation:
-  ends_with: mind
+  components:
+  - mind
+  ends_with: ''
   excludes: ''
-  includes: ''
-  max_length: 12
+  includes: co
+  max_length: 11
   max_time_per_name: 3
-  min_length: 6
-  n_words: 200
+  min_length: 7
+  n_words: 100
   regex_pattern: ''
   starts_with: ''
 llm:
@@ -26,12 +28,12 @@ llm:
     memory and coordination agent for teams, communities, festivals and decentralized
     organisations. The name should feel welcoming, organic, meta, but also grand and
     present. Ideally, the name has some hints as to its purpose.
-  max_chunk_size: 10
+  max_chunk_size: 15
   model: gpt-5-mini
 model:
   backoff: false
-  order: 3
-  temperature: 0.9
+  order: 4
+  temperature: 0.7
 output:
   format: list
   output_file: generated_names.txt
@@ -46,7 +48,7 @@ training_data:
   combine_sources: true
   score_range:
     max: 5
-    min: 2
+    min: 1
   sources:
   - animal_sounds.txt
   - atomic_and_subatomic_particles.txt
