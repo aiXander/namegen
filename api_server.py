@@ -147,6 +147,54 @@ def update_config():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/config/save', methods=['POST'])
+def save_config_as():
+    """Save configuration to a specific file"""
+    try:
+        data = request.json
+        filename = data.get('filename')
+        config = data.get('config')
+        
+        if not filename or not config:
+            return jsonify({'error': 'Filename and config are required'}), 400
+            
+        with open(filename, 'w') as f:
+            yaml.dump(config, f, default_flow_style=False)
+            
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/config/list', methods=['GET'])
+def list_config_files():
+    """List available config files"""
+    try:
+        config_files = []
+        # Look for .yaml files in the current directory
+        for file in os.listdir('.'):
+            if file.endswith('.yaml'):
+                config_files.append(file)
+        return jsonify({'configs': sorted(config_files)})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/config/load/<filename>', methods=['GET'])
+def load_config_from_file(filename):
+    """Load configuration from a specific file"""
+    try:
+        if not filename.endswith('.yaml'):
+            filename += '.yaml'
+            
+        if not os.path.exists(filename):
+            return jsonify({'error': f'Config file {filename} not found'}), 404
+            
+        with open(filename, 'r') as f:
+            config_data = yaml.safe_load(f)
+            
+        return jsonify(config_data or {})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 
 @app.route('/api/ratings', methods=['GET'])
 def get_ratings():

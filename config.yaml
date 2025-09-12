@@ -3,11 +3,11 @@ filtering:
   min_edit_distance: 2
   remove_duplicates: true
 generation:
-  ends_with: ''
+  ends_with: mind
   excludes: ''
-  includes: x
-  max_length: 10
-  max_time_per_name: 2.0
+  includes: ''
+  max_length: 12
+  max_time_per_name: 2
   min_length: 6
   n_words: 10
   regex_pattern: ''
@@ -19,12 +19,12 @@ llm:
     uniqueness, and overall appeal. Reply with the scores as a JSON array of index:score
     (0 to 5), one for each name in order and nothing else. Example: [1:3, 2:4, 3:0,
     4:3]'
-  max_chunk_size: 30
-  model: claude-sonnet-4-20250514
+  max_chunk_size: 25
+  model: gpt-4o-mini
 model:
   backoff: false
-  order: 2
-  temperature: 1.0
+  order: 3
+  temperature: 0.7
 output:
   format: list
   output_file: generated_names.txt
@@ -37,6 +37,9 @@ saved_ratings:
   tenna: 3
 training_data:
   combine_sources: true
+  score_range:
+    max: 5
+    min: 2
   sources:
   - animal_sounds.txt
   - atomic_and_subatomic_particles.txt

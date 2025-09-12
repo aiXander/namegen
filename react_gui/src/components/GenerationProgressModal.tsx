@@ -1,5 +1,4 @@
 import React, { useEffect, useState } from 'react';
-import Modal from './Modal';
 
 interface GenerationProgressModalProps {
   isOpen: boolean;
@@ -20,8 +19,28 @@ const GenerationProgressModal: React.FC<GenerationProgressModalProps> = ({
   const [names, setNames] = useState<string[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
   const [abortController, setAbortController] = useState<AbortController | null>(null);
+  const [animatedText, setAnimatedText] = useState('');
 
-  const progressPercentage = Math.min((currentCount / targetCount) * 100, 100);
+  const progressPercentage = (targetCount > 0 && currentCount >= 0) ? Math.min((currentCount / targetCount) * 100, 100) : 0;
+  console.log('Progress debug:', { currentCount, targetCount, progressPercentage });
+  
+  // Get max length from config for animation
+  const maxLength = config?.generation?.max_length || 12;
+  
+  // Character animation effect
+  useEffect(() => {
+    if (!isGenerating) return;
+    
+    const chars = 'abcdefghijklmnopqrstuvwxyz';
+    const interval = setInterval(() => {
+      const randomString = Array.from({ length: maxLength }, () => 
+        chars[Math.floor(Math.random() * chars.length)]
+      ).join('');
+      setAnimatedText(randomString);
+    }, 100); // 10 per second
+    
+    return () => clearInterval(interval);
+  }, [isGenerating, maxLength]);
 
   const startGeneration = async () => {
     if (isGenerating) return;
@@ -123,41 +142,77 @@ const GenerationProgressModal: React.FC<GenerationProgressModalProps> = ({
       abortController.abort();
     }
     setIsGenerating(false);
-    onStop();
+    // Pass any generated names to the results
+    if (names.length > 0) {
+      onComplete(names);
+    } else {
+      onStop();
+    }
   };
 
+  // Reset state when modal opens
   useEffect(() => {
-    if (isOpen && !isGenerating) {
-      startGeneration();
+    if (isOpen) {
+      setCurrentCount(0);
+      setNames([]);
+      setIsGenerating(false);
+      setAbortController(null);
+      setAnimatedText('');
+      
+      // Start generation after a small delay to ensure state is reset
+      setTimeout(() => {
+        if (isOpen) {
+          startGeneration();
+        }
+      }, 100);
     }
   }, [isOpen]);
 
   if (!isOpen) return null;
 
   return (
-    <Modal isOpen={isOpen} onClose={handleStop} title="Generating Names">
-      <div className="space-y-6">
-        {/* Progress Info */}
+    <div className="modal-overlay" onClick={handleStop} style={{ display: isOpen ? 'flex' : 'none' }}>
+      <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ width: '80%', maxWidth: '80vw', minHeight: '400px', height: 'auto' }}>
+        <div className="modal-header">
+          <h2 className="modal-title">Generated {currentCount} of {targetCount} names</h2>
+          <button 
+            onClick={handleStop}
+            className="btn btn-danger btn-small"
+            disabled={!isGenerating && currentCount === 0}
+          >
+            {isGenerating ? 'Stop Generation' : 'Close'}
+          </button>
+        </div>
+        <div className="space-y-6">
+        {/* Animated Character Sampling */}
         <div className="text-center">
-          <h3 className="text-lg font-semibold mb-2">
-            Generated {currentCount} of {targetCount} names
-          </h3>
-          <p className="text-sm text-muted">
-            {isGenerating ? 'Generating names...' : 'Generation complete'}
-          </p>
+          <div className="text-lg font-mono tracking-wider text-accent-primary mb-4" style={{ minHeight: '2rem' }}>
+            {isGenerating ? animatedText : ''}
+          </div>
         </div>
 
         {/* Progress Bar */}
-        <div className="w-full">
-          <div className="flex justify-between text-sm text-muted mb-2">
-            <span>Progress</span>
+        <div style={{ width: '100%' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', color: '#888888', marginBottom: '8px' }}>
+            <span>Progress ({currentCount}/{targetCount})</span>
             <span>{Math.round(progressPercentage)}%</span>
           </div>
-          <div className="w-full bg-gray-200 rounded-full h-3">
-            <div
-              className="bg-blue-500 h-3 rounded-full transition-all duration-300 ease-out"
-              style={{ width: `${progressPercentage}%` }}
-            />
+          <div style={{ 
+            width: '100%', 
+            height: '20px', 
+            backgroundColor: '#1a1a1a', 
+            borderRadius: '10px',
+            border: '2px solid #4a4a4a',
+            overflow: 'hidden'
+          }}>
+            <div style={{ 
+              height: '100%', 
+              width: `${progressPercentage}%`,
+              backgroundColor: '#a855f7', // Bright purple
+              borderRadius: '8px',
+              transition: 'width 0.3s ease-out',
+              minWidth: progressPercentage > 0 ? '4px' : '0px' // Ensure visibility even at low percentages
+            }} />
           </div>
         </div>
 
@@ -175,18 +230,9 @@ const GenerationProgressModal: React.FC<GenerationProgressModalProps> = ({
           </div>
         )}
 
-        {/* Action Button */}
-        <div className="flex justify-center pt-4">
-          <button
-            onClick={handleStop}
-            className="px-6 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors"
-            disabled={!isGenerating && currentCount === 0}
-          >
-            {isGenerating ? 'Stop Generation' : 'Close'}
-          </button>
         </div>
       </div>
-    </Modal>
+    </div>
   );
 };
 

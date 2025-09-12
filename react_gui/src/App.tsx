@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Play, Save, FolderOpen } from 'lucide-react';
 import { apiService, Config, ScoredName } from './services/api';
 import TrainingDataTab from './components/TrainingDataTab';
-import MarkovParametersTab from './components/MarkovParametersTab';
+import SamplingParametersTab from './components/SamplingParametersTab';
 import ResultsTab from './components/ResultsTab';
 import SavedResultsTab from './components/SavedResultsTab';
 import AITab from './components/AITab';
@@ -17,6 +17,11 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showGenerationModal, setShowGenerationModal] = useState(false);
+  
+  // UI state that persists across tab switches
+  const [selectedSources, setSelectedSources] = useState<string[]>([]);
+  const [minScore, setMinScore] = useState(0);
+  const [maxScore, setMaxScore] = useState(5);
 
   useEffect(() => {
     loadInitialData();
@@ -30,6 +35,14 @@ function App() {
       ]);
       setConfig(configData);
       setRatings(ratingsData);
+      
+      // Initialize UI state from config
+      setSelectedSources(configData.training_data?.sources || []);
+      const scoreRange = configData.training_data?.score_range;
+      if (scoreRange) {
+        setMinScore(scoreRange.min || 0);
+        setMaxScore(scoreRange.max || 5);
+      }
     } catch (err) {
       console.error('Failed to load initial data:', err);
     }
@@ -40,12 +53,34 @@ function App() {
   };
 
   const handleGenerateNames = async () => {
-    if (!config.training_data?.sources?.length) {
+    if (!selectedSources.length) {
       setError('Please select at least one word list in the Training Data tab.');
       return;
     }
 
     setError(null);
+    
+    // Create config with current UI state
+    const currentConfig = {
+      ...config,
+      training_data: {
+        ...config.training_data,
+        sources: selectedSources,
+        score_range: {
+          min: minScore,
+          max: maxScore
+        }
+      }
+    };
+    
+    // Update app config and save
+    setConfig(currentConfig);
+    try {
+      await apiService.updateConfig(currentConfig);
+    } catch (err) {
+      console.error('Failed to save config before generation:', err);
+    }
+    
     setShowGenerationModal(true);
   };
 
@@ -61,9 +96,14 @@ function App() {
   };
 
   const handleSaveConfig = async () => {
+    const filename = prompt('Enter filename for config (without .yaml extension):');
+    if (!filename) return;
+    
+    const yamlFilename = filename.endsWith('.yaml') ? filename : `${filename}.yaml`;
+    
     try {
-      await apiService.updateConfig(config);
-      alert('Configuration saved successfully!');
+      await apiService.saveConfigAs(yamlFilename, config);
+      alert(`Configuration saved successfully as ${yamlFilename}!`);
     } catch (err) {
       console.error('Failed to save config:', err);
       alert('Failed to save configuration');
@@ -72,9 +112,37 @@ function App() {
 
   const handleLoadConfig = async () => {
     try {
-      const configData = await apiService.getConfig();
+      const availableConfigs = await apiService.getAvailableConfigs();
+      
+      if (availableConfigs.length === 0) {
+        alert('No config files found in the current directory.');
+        return;
+      }
+      
+      const configList = availableConfigs.map((config, index) => `${index + 1}. ${config}`).join('\n');
+      const selection = prompt(`Available config files:\n${configList}\n\nEnter the number of the config to load:`);
+      
+      if (!selection) return;
+      
+      const selectedIndex = parseInt(selection) - 1;
+      if (selectedIndex < 0 || selectedIndex >= availableConfigs.length) {
+        alert('Invalid selection.');
+        return;
+      }
+      
+      const selectedConfig = availableConfigs[selectedIndex];
+      const configData = await apiService.loadConfigFrom(selectedConfig);
       setConfig(configData);
-      alert('Configuration loaded successfully!');
+      
+      // Update UI state from loaded config
+      setSelectedSources(configData.training_data?.sources || []);
+      const scoreRange = configData.training_data?.score_range;
+      if (scoreRange) {
+        setMinScore(scoreRange.min || 0);
+        setMaxScore(scoreRange.max || 5);
+      }
+      
+      alert(`Configuration loaded successfully from ${selectedConfig}!`);
     } catch (err) {
       console.error('Failed to load config:', err);
       alert('Failed to load configuration');
@@ -99,19 +167,48 @@ function App() {
 
   const tabs = [
     { id: 'training', label: 'Training Data' },
-    { id: 'parameters', label: 'Markov Parameters' },
+    { id: 'parameters', label: 'Sampling Parameters' },
     { id: 'results', label: 'Results' },
-    { id: 'saved', label: 'Saved Results' },
-    { id: 'ai', label: 'AI' }
+    { id: 'ai', label: 'AI' },
+    { id: 'saved', label: 'Saved Results' }
   ];
 
   return (
     <div className="min-h-screen bg-primary text-primary p-6">
       <div className="max-w-6xl mx-auto">
         {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold mb-2">Markov Name Generator</h1>
-          <p className="text-muted">Generate unique names using Markov chains and AI scoring</p>
+        <div className="flex items-start justify-between mb-8">
+          <div>
+            <h1 className="text-3xl font-bold mb-2">Markov Name Generator</h1>
+            <p className="text-muted">Generate unique names using Markov chains and AI scoring</p>
+          </div>
+          
+          {/* Control Buttons */}
+          <div className="flex gap-4">
+            <button
+              className="btn btn-primary"
+              onClick={handleGenerateNames}
+            >
+              <Play size={16} />
+              Generate Names
+            </button>
+
+            <button
+              className="btn btn-secondary"
+              onClick={handleSaveConfig}
+            >
+              <Save size={16} />
+              Save Config
+            </button>
+
+            <button
+              className="btn btn-secondary"
+              onClick={handleLoadConfig}
+            >
+              <FolderOpen size={16} />
+              Load Config
+            </button>
+          </div>
         </div>
 
         {/* Tab Navigation */}
@@ -136,11 +233,17 @@ function App() {
             <TrainingDataTab
               config={config}
               onConfigChange={handleConfigChange}
+              selectedSources={selectedSources}
+              setSelectedSources={setSelectedSources}
+              minScore={minScore}
+              setMinScore={setMinScore}
+              maxScore={maxScore}
+              setMaxScore={setMaxScore}
             />
           )}
 
           {activeTab === 'parameters' && (
-            <MarkovParametersTab
+            <SamplingParametersTab
               config={config}
               onConfigChange={handleConfigChange}
             />
@@ -152,6 +255,7 @@ function App() {
               aiResults={aiResults}
               ratings={ratings}
               onRateChange={handleRateChange}
+              onAIScoreClick={() => setActiveTab('ai')}
             />
           )}
 
@@ -169,36 +273,13 @@ function App() {
               results={results}
               ratings={ratings}
               onAIResults={handleAIResults}
+              selectedSources={selectedSources}
+              minScore={minScore}
+              maxScore={maxScore}
             />
           )}
         </div>
 
-        {/* Control Buttons */}
-        <div className="flex gap-4 mt-8 pt-6 border-t border-border-color">
-          <button
-            className="btn btn-primary"
-            onClick={handleGenerateNames}
-          >
-            <Play size={16} />
-            Generate Names
-          </button>
-
-          <button
-            className="btn btn-secondary"
-            onClick={handleSaveConfig}
-          >
-            <Save size={16} />
-            Save Config
-          </button>
-
-          <button
-            className="btn btn-secondary"
-            onClick={handleLoadConfig}
-          >
-            <FolderOpen size={16} />
-            Load Config
-          </button>
-        </div>
 
         {/* Error Display */}
         {error && (

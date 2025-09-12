@@ -19,6 +19,10 @@ export interface WordListContent {
 export interface Config {
   training_data?: {
     sources: string[];
+    score_range?: {
+      min: number;
+      max: number;
+    };
   };
   model?: {
     order: number;
@@ -38,6 +42,7 @@ export interface Config {
     model: string;
     max_chunk_size: number;
     default_instructions: string;
+    description: string;
   };
   word_list_ratings?: Record<string, number>;
   saved_ratings?: Record<string, number>;
@@ -99,6 +104,20 @@ class ApiService {
 
   async updateConfig(config: Config): Promise<void> {
     await axios.post(`${this.baseURL}/config`, config);
+  }
+
+  async saveConfigAs(filename: string, config: Config): Promise<void> {
+    await axios.post(`${this.baseURL}/config/save`, { filename, config });
+  }
+
+  async getAvailableConfigs(): Promise<string[]> {
+    const response = await axios.get(`${this.baseURL}/config/list`);
+    return response.data.configs;
+  }
+
+  async loadConfigFrom(filename: string): Promise<Config> {
+    const response = await axios.get(`${this.baseURL}/config/load/${filename}`);
+    return response.data;
   }
 
 

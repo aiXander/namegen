@@ -7,23 +7,38 @@ import Modal from './Modal';
 interface TrainingDataTabProps {
   config: any;
   onConfigChange: (config: any) => void;
+  selectedSources: string[];
+  setSelectedSources: (sources: string[]) => void;
+  minScore: number;
+  setMinScore: (score: number) => void;
+  maxScore: number;
+  setMaxScore: (score: number) => void;
 }
 
-const TrainingDataTab: React.FC<TrainingDataTabProps> = ({ config, onConfigChange }) => {
+const TrainingDataTab: React.FC<TrainingDataTabProps> = ({ 
+  config, 
+  onConfigChange, 
+  selectedSources, 
+  setSelectedSources, 
+  minScore, 
+  setMinScore, 
+  maxScore, 
+  setMaxScore 
+}) => {
   const [wordLists, setWordLists] = useState<WordList[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedWordList, setSelectedWordList] = useState<WordListContent | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [viewMode, setViewMode] = useState<'sorted' | 'random'>('sorted');
-  const [minScore, setMinScore] = useState(0);
-  const [maxScore, setMaxScore] = useState(5);
   const [sortColumn, setSortColumn] = useState<'name' | 'word_count' | 'rating'>('name');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
 
   useEffect(() => {
     loadWordLists();
   }, []);
+
+
 
   const loadWordLists = async () => {
     try {
@@ -39,39 +54,20 @@ const TrainingDataTab: React.FC<TrainingDataTabProps> = ({ config, onConfigChang
   };
 
   const handleWordListToggle = (filename: string) => {
-    const sources = config.training_data?.sources || [];
-    const newSources = sources.includes(filename)
-      ? sources.filter((s: string) => s !== filename)
-      : [...sources, filename];
+    const newSources = selectedSources.includes(filename)
+      ? selectedSources.filter((s: string) => s !== filename)
+      : [...selectedSources, filename];
     
-    onConfigChange({
-      ...config,
-      training_data: {
-        ...config.training_data,
-        sources: newSources
-      }
-    });
+    setSelectedSources(newSources);
   };
 
   const handleSelectAll = () => {
     const allFilenames = wordLists.map(wl => wl.filename);
-    onConfigChange({
-      ...config,
-      training_data: {
-        ...config.training_data,
-        sources: allFilenames
-      }
-    });
+    setSelectedSources(allFilenames);
   };
 
   const handleDeselectAll = () => {
-    onConfigChange({
-      ...config,
-      training_data: {
-        ...config.training_data,
-        sources: []
-      }
-    });
+    setSelectedSources([]);
   };
 
   const handleSelectByScore = () => {
@@ -79,13 +75,7 @@ const TrainingDataTab: React.FC<TrainingDataTabProps> = ({ config, onConfigChang
       .filter(wl => wl.rating >= minScore && wl.rating <= maxScore)
       .map(wl => wl.filename);
     
-    onConfigChange({
-      ...config,
-      training_data: {
-        ...config.training_data,
-        sources: filteredFilenames
-      }
-    });
+    setSelectedSources(filteredFilenames);
   };
 
   const handleRateWordList = async (filename: string, rating: number) => {
@@ -149,7 +139,6 @@ const TrainingDataTab: React.FC<TrainingDataTabProps> = ({ config, onConfigChang
   };
 
   const getTotalSelectedWords = () => {
-    const selectedSources = config.training_data?.sources || [];
     return wordLists
       .filter(wordList => selectedSources.includes(wordList.filename))
       .reduce((total, wordList) => total + wordList.word_count, 0);
@@ -181,7 +170,6 @@ const TrainingDataTab: React.FC<TrainingDataTabProps> = ({ config, onConfigChang
     );
   }
 
-  const selectedSources = config.training_data?.sources || [];
 
   return (
     <div>
@@ -219,7 +207,9 @@ const TrainingDataTab: React.FC<TrainingDataTabProps> = ({ config, onConfigChang
                 value={minScore}
                 onChange={(e) => {
                   const value = parseInt(e.target.value);
-                  if (value <= maxScore) setMinScore(value);
+                  if (value <= maxScore) {
+                    setMinScore(value);
+                  }
                 }}
                 className="dual-range-slider"
                 style={{ zIndex: 1 }}
@@ -231,7 +221,9 @@ const TrainingDataTab: React.FC<TrainingDataTabProps> = ({ config, onConfigChang
                 value={maxScore}
                 onChange={(e) => {
                   const value = parseInt(e.target.value);
-                  if (value >= minScore) setMaxScore(value);
+                  if (value >= minScore) {
+                    setMaxScore(value);
+                  }
                 }}
                 className="dual-range-slider"
                 style={{ zIndex: 2 }}
@@ -256,7 +248,7 @@ const TrainingDataTab: React.FC<TrainingDataTabProps> = ({ config, onConfigChang
       {/* Word lists table */}
       <div className="max-h-96 overflow-y-auto">
         <table className="w-full">
-          <thead className="sticky top-0 bg-primary border-b border-border-color">
+          <thead className="sticky top-0 border-b border-border-color" style={{ backgroundColor: 'var(--bg-primary)', zIndex: 20 }}>
             <tr>
               <th className="text-left py-3 px-4 w-12">
                 <span className="text-sm font-medium text-primary">Select</span>

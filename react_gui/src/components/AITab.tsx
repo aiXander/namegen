@@ -7,6 +7,9 @@ interface AITabProps {
   results: string[];
   ratings: Record<string, number>;
   onAIResults: (results: ScoredName[]) => void;
+  selectedSources: string[];
+  minScore: number;
+  maxScore: number;
 }
 
 const AITab: React.FC<AITabProps> = ({ 
@@ -14,7 +17,10 @@ const AITab: React.FC<AITabProps> = ({
   onConfigChange, 
   results, 
   ratings,
-  onAIResults 
+  onAIResults,
+  selectedSources,
+  minScore,
+  maxScore 
 }) => {
   const [description, setDescription] = useState('');
   const [instructions, setInstructions] = useState('');
@@ -30,12 +36,16 @@ const AITab: React.FC<AITabProps> = ({
   useEffect(() => {
     loadAIModels();
     
-    // Load default instructions from config
+    // Load default instructions and description from config
     const llmConfig = config.llm || {};
     if (llmConfig.default_instructions) {
       setInstructions(llmConfig.default_instructions);
     } else {
       setInstructions('Based on the provided description and scored names, score the following generated name ideas on a scale of 0.0 to 5.0, where 5.0 is excellent and 0.0 is poor.');
+    }
+    
+    if (llmConfig.description) {
+      setDescription(llmConfig.description);
     }
     
     if (llmConfig.model) {
@@ -97,16 +107,33 @@ const AITab: React.FC<AITabProps> = ({
       
       onAIResults(response.scored_names);
       
-      // Update config with current settings
-      onConfigChange({
+      // Update and save config with current settings including UI state
+      const updatedConfig = {
         ...config,
         llm: {
           ...config.llm,
           model: selectedModel,
           max_chunk_size: chunkSize,
-          default_instructions: instructions.trim()
+          default_instructions: instructions.trim(),
+          description: description.trim()
+        },
+        training_data: {
+          ...config.training_data,
+          sources: selectedSources,
+          score_range: {
+            min: minScore,
+            max: maxScore
+          }
         }
-      });
+      };
+      onConfigChange(updatedConfig);
+      
+      // Save config to file
+      try {
+        await apiService.updateConfig(updatedConfig);
+      } catch (err) {
+        console.error('Failed to save config after AI scoring:', err);
+      }
       
     } catch (err: any) {
       setError(err.response?.data?.error || 'Failed to score names with AI');
