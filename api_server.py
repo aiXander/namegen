@@ -12,6 +12,7 @@ import json
 import yaml
 import threading
 import time
+import sys
 from typing import Dict, List, Any, Generator
 from markov_namegen import MarkovNameGenerator
 from ai.llm_scorer import LLMScorer
@@ -246,43 +247,71 @@ def generate_names_stream():
     """Generate names with streaming progress updates"""
     global generator, cached_generator, cached_word_list_hash, cached_model_params_hash
     
+    print("🔥 STREAM ENDPOINT CALLED!")
+    print(f"Request method: {request.method}")
+    print(f"Request headers: {dict(request.headers)}")
+    
     try:
         config = request.json
+        print(f"📨 Received config: {config}")
         current_config.update(config)
+        print("✅ Config updated successfully")
         
         # Check if any word lists are selected
         selected_sources = config.get('training_data', {}).get('sources', [])
+        print(f"📚 Selected sources: {selected_sources}")
         if not selected_sources:
+            print("❌ No word lists selected!")
             def error_stream():
                 yield f"data: {json.dumps({'type': 'error', 'message': 'Please select at least one word list'})}\n\n"
             return Response(error_stream(), mimetype='text/plain')
         
         # Create generator (with caching logic similar to GUI)
+        print("🔨 Creating generator...")
         import hashlib
         current_word_list_hash = hashlib.md5(str(sorted(selected_sources)).encode()).hexdigest()
         model_params = config.get('model', {})
         current_model_params_hash = hashlib.md5(str(model_params).encode()).hexdigest()
         
+        print(f"🔍 Hash comparison: current_wl={current_word_list_hash[:8]}, cached_wl={cached_word_list_hash[:8] if cached_word_list_hash else 'None'}")
+        print(f"🔍 Hash comparison: current_mp={current_model_params_hash[:8]}, cached_mp={cached_model_params_hash[:8] if cached_model_params_hash else 'None'}")
+        
         if (cached_generator is not None and
             cached_word_list_hash == current_word_list_hash and
             cached_model_params_hash == current_model_params_hash):
+            print("♻️  Using cached generator")
             generator = cached_generator
         else:
-            generator = MarkovNameGenerator()
-            generator.config = current_config
-            generator.training_words = generator._load_training_data()
-            
-            from markov.name_generator import NameGenerator
-            generator.generator = NameGenerator(
-                data=generator.training_words,
-                order=model_params.get('order', 3),
-                temperature=model_params.get('temperature', 1.0),
-                backoff=model_params.get('backoff', True)
-            )
-            
-            cached_generator = generator
-            cached_word_list_hash = current_word_list_hash
-            cached_model_params_hash = current_model_params_hash
+            print("🆕 Creating new generator...")
+            try:
+                generator = MarkovNameGenerator()
+                generator.config = current_config
+                print("📖 Loading training data...")
+                generator.training_words = generator._load_training_data()
+                print(f"📊 Loaded {len(generator.training_words) if generator.training_words else 0} training words")
+                
+                from markov.name_generator import NameGenerator
+                print("🧠 Creating NameGenerator...")
+                generator.generator = NameGenerator(
+                    data=generator.training_words,
+                    order=model_params.get('order', 3),
+                    temperature=model_params.get('temperature', 1.0),
+                    backoff=model_params.get('backoff', True)
+                )
+                print("✅ NameGenerator created successfully")
+                
+                cached_generator = generator
+                cached_word_list_hash = current_word_list_hash
+                cached_model_params_hash = current_model_params_hash
+                print("💾 Generator cached")
+            except Exception as e:
+                print(f"❌ ERROR creating generator: {str(e)}")
+                import traceback
+                traceback.print_exc()
+                error_msg = f"Generator creation failed: {str(e)}"
+                def error_stream():
+                    yield f"data: {json.dumps({'type': 'error', 'message': error_msg})}\n\n"
+                return Response(error_stream(), mimetype='text/plain')
         
         # Update configuration with defaults
         if 'filtering' not in config:
@@ -300,14 +329,23 @@ def generate_names_stream():
         generator.config.update(config)
         
         def generate_stream():
+            print("🌊 Starting generate_stream function...")
             try:
+                print("🎲 About to call generate_names_with_progress...")
+                name_count = 0
                 # Generate names with streaming
                 for name in generate_names_with_progress(generator, config):
+                    name_count += 1
+                    print(f"🎯 Yielding name #{name_count}: '{name}'")
                     yield f"data: {json.dumps({'type': 'progress', 'name': name})}\n\n"
                     time.sleep(0.01)  # Small delay to prevent overwhelming the frontend
                 
+                print(f"✅ Generation complete! Total names: {name_count}")
                 yield f"data: {json.dumps({'type': 'complete'})}\n\n"
             except Exception as e:
+                print(f"❌ ERROR in generate_stream: {str(e)}")
+                import traceback
+                traceback.print_exc()
                 yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
         
         return Response(generate_stream(), mimetype='text/plain')
@@ -319,7 +357,11 @@ def generate_names_stream():
 
 def generate_names_with_progress(generator: MarkovNameGenerator, config: Dict[str, Any]) -> Generator[str, None, None]:
     """Generate names one by one, yielding each valid name as it's found"""
+    print(f"🚀 Starting name generation...")
+    print(f"📄 Config: {config}")
+    
     gen_config = config.get('generation', {})
+    print(f"⚙️  Generation config: {gen_config}")
     
     target_count = gen_config.get('n_words', 20)
     min_length = gen_config.get('min_length', 4)
@@ -331,6 +373,18 @@ def generate_names_with_progress(generator: MarkovNameGenerator, config: Dict[st
     max_time_per_name = gen_config.get('max_time_per_name', 1.0)
     regex_pattern = gen_config.get('regex_pattern') if gen_config.get('regex_pattern') else None
     
+    print(f"🎯 Target: {target_count} names")
+    print(f"📏 Length: {min_length}-{max_length}")
+    print(f"🔍 Constraints: starts='{starts_with}', ends='{ends_with}', includes='{includes}', excludes='{excludes}'")
+    print(f"⏱️  Max time per name: {max_time_per_name}s")
+    print(f"🧠 Generator ready: {generator is not None}")
+    print(f"🧠 Inner generator: {generator.generator if generator else 'None'}")
+    
+    if generator and hasattr(generator, 'training_words'):
+        print(f"📚 Training words: {len(generator.training_words) if generator.training_words else 0}")
+    
+    print("=" * 50)
+    
     names = []
     start_time = time.time()
     last_success_time = start_time
@@ -339,28 +393,39 @@ def generate_names_with_progress(generator: MarkovNameGenerator, config: Dict[st
     max_attempts_per_name = 10000
     
     while len(names) < target_count:
-        name = generator.generator.generate_name(
-            min_length=min_length,
-            max_length=max_length,
-            starts_with=starts_with,
-            ends_with=ends_with,
-            includes=includes,
-            excludes=excludes,
-            regex_pattern=regex_pattern
-        )
-        attempts_since_last_success += 1
+        try:
+            name = generator.generator.generate_name(
+                min_length=min_length,
+                max_length=max_length,
+                starts_with=starts_with,
+                ends_with=ends_with,
+                includes=includes,
+                excludes=excludes,
+                regex_pattern=regex_pattern
+            )
+            attempts_since_last_success += 1
+        except Exception as e:
+            print(f"\n❌ ERROR during name generation: {str(e)}")
+            print(f"Exception type: {type(e).__name__}")
+            import traceback
+            traceback.print_exc()
+            break
         
         if name is not None:
+            # Print current attempt with overwrite
+            print(f"\rAttempt {attempts_since_last_success}: '{name}' ", end='', flush=True)
+            
             # Apply filtering to this single name
             if should_keep_name(name, names, generator, config):
                 names.append(name)
+                # Print successful name on new line
+                print(f"\n✓ ACCEPTED: '{name}' ({len(names)}/{target_count})")
                 yield name
                 attempts_since_last_success = 0  # Reset attempts counter when we find a valid name
                 last_success_time = time.time()  # Reset success timer
-            elif attempts_since_last_success % 1000 == 0:
-                print(f"Generated name '{name}' rejected by filters (attempt {attempts_since_last_success})")
-        elif attempts_since_last_success % 1000 == 0:
-            print(f"No name generated (attempt {attempts_since_last_success})")
+        else:
+            # Print failed generation attempt
+            print(f"\rAttempt {attempts_since_last_success}: <no name generated> ", end='', flush=True)
         
         # Safety check to prevent infinite loops
         current_time = time.time()
@@ -368,12 +433,12 @@ def generate_names_with_progress(generator: MarkovNameGenerator, config: Dict[st
         
         # Stop if we haven't found a name in too long OR total time exceeded
         if time_since_last_success > max_time_per_name * 2 or (current_time - start_time) > max_total_time:
-            print(f"Stopping generation: time_since_last_success={time_since_last_success:.3f}s, max_allowed={max_time_per_name * 2:.3f}s, total_time={(current_time - start_time):.3f}s, max_total={max_total_time:.3f}s, names_found={len(names)}")
+            print(f"\n⏰ TIMEOUT: time_since_last_success={time_since_last_success:.3f}s, max_allowed={max_time_per_name * 2:.3f}s, total_time={(current_time - start_time):.3f}s, max_total={max_total_time:.3f}s, names_found={len(names)}")
             break
         
         # If we've tried many times without success, give up
         if attempts_since_last_success > max_attempts_per_name:
-            print(f"Stopping generation: attempts_since_last_success={attempts_since_last_success}, max_allowed={max_attempts_per_name}, names_found={len(names)}")
+            print(f"\n🛑 MAX ATTEMPTS: attempts_since_last_success={attempts_since_last_success}, max_allowed={max_attempts_per_name}, names_found={len(names)}")
             break
 
 def should_keep_name(name: str, existing_names: List[str], generator: MarkovNameGenerator, config: Dict[str, Any]) -> bool:

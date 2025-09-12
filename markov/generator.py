@@ -1,6 +1,7 @@
 import random
 from typing import List, Optional
 from .markov_model import MarkovModel
+from .constraint_sampler import ConstraintSampler, GenerationConstraints
 
 
 class Generator:
@@ -33,6 +34,9 @@ class Generator:
         else:
             # Create single model of specified order
             self.models.append(MarkovModel(data.copy(), order, temperature, domain))
+        
+        # Initialize constraint sampler with primary model
+        self.constraint_sampler = ConstraintSampler(self.models[0])
     
     def generate(self) -> str:
         """Generate a word"""
@@ -63,3 +67,34 @@ class Generator:
                 break
         
         return letter
+    
+    def generate_with_constraints(self, min_length: int = 1, max_length: int = 20,
+                                starts_with: str = "", ends_with: str = "",
+                                includes: str = "", excludes: str = "",
+                                regex_pattern: Optional[str] = None) -> Optional[str]:
+        """
+        Generate a word using constraint-integrated sampling for improved efficiency.
+        
+        Args:
+            min_length: Minimum word length
+            max_length: Maximum word length  
+            starts_with: Required prefix
+            ends_with: Required suffix
+            includes: Required substring (applied as posterior filter)
+            excludes: Forbidden substring
+            regex_pattern: Optional regex pattern to match
+            
+        Returns:
+            Generated word meeting constraints, or None if constraints impossible
+        """
+        constraints = GenerationConstraints(
+            min_length=min_length,
+            max_length=max_length,
+            starts_with=starts_with,
+            ends_with=ends_with,
+            includes=includes,
+            excludes=excludes,
+            regex_pattern=regex_pattern
+        )
+        
+        return self.constraint_sampler.generate_constrained_name(constraints)

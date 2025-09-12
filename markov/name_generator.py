@@ -22,7 +22,7 @@ class NameGenerator:
                      includes: str = "", excludes: str = "",
                      regex_pattern: Optional[str] = None) -> Optional[str]:
         """
-        Generate a single name within constraints.
+        Generate a single name within constraints using improved constraint-integrated sampling.
         
         Args:
             min_length: Minimum length of the word
@@ -36,6 +36,24 @@ class NameGenerator:
         Returns:
             A word that meets constraints, or None if generated word doesn't meet constraints
         """
+        # Try new constraint-integrated approach first
+        name = self.generator.generate_with_constraints(
+            min_length=min_length,
+            max_length=max_length,
+            starts_with=starts_with,
+            ends_with=ends_with,
+            includes=includes,
+            excludes=excludes,
+            regex_pattern=regex_pattern
+        )
+        
+        if name is not None:
+            # Final regex validation if provided
+            if regex_pattern and not re.match(regex_pattern, name):
+                return None
+            return name
+        
+        # Fallback to original approach if constraint-integrated fails
         name = self.generator.generate()
         name = name.replace("#", "")
         

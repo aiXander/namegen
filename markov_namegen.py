@@ -48,7 +48,7 @@ class MarkovNameGenerator:
         self.generator = NameGenerator(
             data=self.training_words,
             order=model_config['order'],
-            prior=model_config['prior'],
+            temperature=model_config['temperature'],
             backoff=model_config['backoff']
         )
     

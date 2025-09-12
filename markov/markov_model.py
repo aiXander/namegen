@@ -26,7 +26,9 @@ class MarkovModel:
         if chain is None:
             return None
         
-        return self.alphabet[self._select_index(chain)]
+        index = self._select_index(chain)
+        letter = self.alphabet[index]
+        return letter
     
     def retrain(self, data: List[str]) -> None:
         """Retrain model on new data"""
@@ -85,6 +87,7 @@ class MarkovModel:
                     exp_log_probs = [math.exp(lp - max_log_prob) for lp in log_probs]
                     total_exp = sum(exp_log_probs)
                     chain = [exp_prob / total_exp for exp_prob in exp_log_probs]
+                    
             
             self.chains[context] = chain
     
