@@ -98,7 +98,7 @@ class LLMScorer:
                 model=self.model,
                 cache_keys=cache_keys,
                 schema_hints=[schema_hint] * len(prompts),
-                batch_size=8,  # Process up to 8 chunks concurrently
+                batch_size=10,  # Run up to batch_size API calls concurrently
                 max_retries=3,
                 reasoning_effort="low",
                 verbosity=1

@@ -450,7 +450,7 @@ def generate_names_with_progress(generator: MarkovNameGenerator, config: Dict[st
     last_success_time = start_time
     max_total_time = max_time_per_name * target_count
     attempts_since_last_success = 0
-    max_attempts_per_name = 100000
+    max_attempts_per_name = 1000000
     
     while len(names) < target_count:
         try:
