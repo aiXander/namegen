@@ -237,7 +237,7 @@ curl -X POST http://localhost:5001/api/generate-stream \
 I welcome contributions! Areas of interest:
 
 - 📚 **New datasets** - Add better, domain-specific word lists
-- 🧠 **Algorithm improvements** - Better sampling strategies
+- 🧠 **Algorithm improvements** - Better sampling strategies, add a fast word-evaluation model that leverages already scored names.
 - 🎨 **UI enhancements** - React component improvements
 - 🔧 **Performance optimization** - Faster markov sampling under constraints
 
