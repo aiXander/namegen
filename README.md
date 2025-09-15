@@ -8,6 +8,9 @@
 
 Transform word lists into endless creative possibilities using statistical learning and intelligent sampling.
 
+
+<img src="assets/graphic.jpg" alt="Training Data Explorer" width="100%">
+
 ---
 
 ## 🚀 What Makes This Special?
