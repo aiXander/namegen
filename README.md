@@ -73,7 +73,7 @@ Input: "Your task is to score name ideas for a new data startup. Here are my ide
 Output: [("techflow", 4.2), ("datacore", 3.8), ("cloudnex", 4.7)]
 ```
 
-<img src="assets/ai_evaluation.jpg" alt="AI-Powered Name Scoring" width="60%">
+<img src="assets/ai_evaluation.jpg" alt="AI-Powered Name Scoring" width="80%">
 
 - **Contextual Scoring**: Evaluates names against your specific use case
 - **Example Learning**: Uses your rated names to improve scoring
@@ -92,7 +92,7 @@ python api_server.py &
 cd react_gui && npm start
 ```
 
-<img src="assets/training.jpg" alt="Training Data Explorer" width="60%">
+<img src="assets/training.jpg" alt="Training Data Explorer" width="80%">
 
 **Features:**
 - 📊 **Training Data Explorer** - Browse and rate 121 curated word lists
@@ -101,7 +101,7 @@ cd react_gui && npm start
 - 📈 **Results Dashboard** - Generate, rate, and export names
 - 🤖 **AI Integration** - One-click AI scoring with multiple models
 
-<img src="assets/text_constraints.jpg" alt="Parameter Tuning and Constraints" width="60%">
+<img src="assets/text_constraints.jpg" alt="Parameter Tuning and Constraints" width="80%">
 
 ---
 
