@@ -5,17 +5,15 @@ filtering:
   min_edit_distance: 2
   remove_duplicates: true
 generation:
-  components:
-  - mind
-  ends_with: ''
+  ends_with: nd
   excludes: ''
-  includes: co
-  max_length: 11
+  includes: ''
+  max_length: 5
   max_time_per_name: 3
-  min_length: 7
+  min_length: 4
   n_words: 100
   regex_pattern: ''
-  starts_with: ''
+  starts_with: m
 llm:
   default_instructions: Based on the provided description and scored names, score
     the following generated name ideas on a scale of 0 to 5, where 5 is excellent
@@ -32,8 +30,8 @@ llm:
   model: gpt-5-mini
 model:
   backoff: false
-  order: 4
-  temperature: 0.7
+  order: 3
+  temperature: 0.6
 output:
   format: list
   output_file: generated_names.txt
