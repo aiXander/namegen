@@ -30,6 +30,8 @@ Training: "apple" → extract trigrams: "##a", "#ap", "app", "ppl", "ple", "le#"
 Learning: "##a" → 'p' (100%), "#ap" → 'p' (100%), "app" → 'l' (67%)
 ```
 
+<img src="assets/training.jpg" alt="Training Data Explorer" width="100%">
+
 This system builds **probability distributions** for each character context:
 
 1. **📖 Training Phase**: Extracts n-gram patterns from word lists
@@ -64,6 +66,8 @@ starts_with="tech" + ends_with="corp" + length=8-12
 - **Content Filters**: Includes/excludes specific substrings
 - **Regex Patterns**: Matches complex structural requirements
 
+<img src="assets/text_constraints.jpg" alt="Parameter Tuning and Constraints" width="100%">
+
 ### 🤖 AI-Powered Quality Scoring
 
 The integrated `LLMScorer` sends batches of names to language models for intelligent evaluation:
@@ -92,16 +96,12 @@ python api_server.py &
 cd react_gui && npm start
 ```
 
-<img src="assets/training.jpg" alt="Training Data Explorer" width="100%">
-
 **Features:**
 - 📊 **Training Data Explorer** - Browse and rate 121 curated word lists
 - ⚙️ **Parameter Tuning** - Real-time adjustment of model settings
 - 🎯 **Constraint Builder** - Visual constraint configuration
 - 📈 **Results Dashboard** - Generate, rate, and export names
 - 🤖 **AI Integration** - One-click AI scoring with multiple models
-
-<img src="assets/text_constraints.jpg" alt="Parameter Tuning and Constraints" width="100%">
 
 ---
 
