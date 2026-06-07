@@ -2,6 +2,8 @@ import time
 import re
 from typing import List, Optional, Tuple
 from .generator import Generator
+from .constraint_sampler import (GenerationConstraints, meets_includes_constraint,
+                                 parse_excludes_tokens)
 
 
 class NameGenerator:
@@ -56,16 +58,16 @@ class NameGenerator:
         # Fallback to original approach if constraint-integrated fails
         name = self.generator.generate()
         name = name.replace("#", "")
-        
-        # Check constraints
+
+        # Check constraints (same includes/excludes semantics as the sampler)
         if (min_length <= len(name) <= max_length and
             (not starts_with or name.startswith(starts_with)) and
             (not ends_with or name.endswith(ends_with)) and
-            (not includes or includes in name) and
-            (not excludes or excludes not in name) and
+            (not includes or meets_includes_constraint(name, includes)) and
+            all(token not in name for token in parse_excludes_tokens(excludes)) and
             (not regex_pattern or re.match(regex_pattern, name))):
             return name
-        
+
         return None
     
     def generate_names(self, n: int, min_length: int = 1, max_length: int = 20,
@@ -90,37 +92,38 @@ class NameGenerator:
         Returns:
             List of names that meet constraints
         """
+        # Bail out immediately on self-contradictory constraints instead of
+        # burning the whole time budget on attempts that can never succeed
+        constraints = GenerationConstraints(
+            min_length=min_length, max_length=max_length,
+            starts_with=starts_with, ends_with=ends_with,
+            includes=includes, excludes=excludes, regex_pattern=regex_pattern
+        )
+        if not constraints.is_feasible():
+            return []
+
         names = []
         start_time = time.time()
         max_total_time = max_time_per_name * n
         attempts = 0
         max_attempts_per_name = 1000
-        
+
         while len(names) < n:
-            name = self.generate_name(min_length, max_length, starts_with, 
+            name = self.generate_name(min_length, max_length, starts_with,
                                     ends_with, includes, excludes, regex_pattern)
             attempts += 1
-            
+
             if name is not None:
                 names.append(name)
                 attempts = 0  # Reset attempts counter when we find a valid name
-            
-            # Safety check to prevent infinite loops - break if we've tried too many times
-            # or spent too much total time
-            current_time = time.time()
-            if (current_time - start_time) > max_total_time:
-                # If we haven't found enough names but have some, return what we have
+
+            # Safety checks to prevent unbounded loops: stop on total-time
+            # budget or after too many consecutive failed attempts
+            if (time.time() - start_time) > max_total_time:
                 break
-            
-            # If we've tried many times without success and have no names, give more time
-            if attempts > max_attempts_per_name and len(names) == 0:
-                # Increase max_total_time if we haven't found any names yet
-                max_total_time *= 2
-                attempts = 0
-            elif attempts > max_attempts_per_name:
-                # If we have some names but struggling to find more, stop trying
+            if attempts > max_attempts_per_name:
                 break
-        
+
         return names
     
     def generate_name_with_components(self, components: List[str], min_length: int = 6, max_length: int = 12,
@@ -201,7 +204,7 @@ class NameGenerator:
         max_total_time = max_time_per_name * n
         attempts = 0
         max_attempts_per_name = 1000
-        
+
         while len(names) < n:
             name = self.generate_name_with_components(
                 components=components,
@@ -216,23 +219,16 @@ class NameGenerator:
                 regex_pattern=regex_pattern
             )
             attempts += 1
-            
+
             if name is not None:
                 names.append(name)
                 attempts = 0  # Reset attempts counter when we find a valid name
-            
-            # Safety check to prevent infinite loops
-            current_time = time.time()
-            if (current_time - start_time) > max_total_time:
+
+            # Safety checks to prevent unbounded loops: stop on total-time
+            # budget or after too many consecutive failed attempts
+            if (time.time() - start_time) > max_total_time:
                 break
-            
             if attempts > max_attempts_per_name:
-                if len(names) == 0:
-                    # Increase max_total_time if we haven't found any names yet
-                    max_total_time *= 2
-                    attempts = 0
-                else:
-                    # If we have some names but struggling to find more, stop trying
-                    break
-        
+                break
+
         return names

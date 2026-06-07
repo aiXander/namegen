@@ -1,3 +1,0 @@
-PyYAML>=6.0
-tkinter
-litellm>=1.0.0

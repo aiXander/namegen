@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
-import { Play, Save, FolderOpen, Bot } from 'lucide-react';
-import { apiService, Config, ScoredName } from './services/api';
+import React, { useState, useEffect, useRef } from 'react';
+import { Play, Save, FolderOpen, Bot, Sparkles } from 'lucide-react';
+import { apiService, Config, ScoredName, PrefilterInfo } from './services/api';
 import TrainingDataTab from './components/TrainingDataTab';
 import SamplingParametersTab from './components/SamplingParametersTab';
 import ResultsTab from './components/ResultsTab';
@@ -8,16 +8,56 @@ import SavedResultsTab from './components/SavedResultsTab';
 import AITab from './components/AITab';
 import GenerationProgressModal from './components/GenerationProgressModal';
 
+// Generated names + AI scores only live in React state (config and ratings
+// already persist to the backend), so persist them to localStorage to survive
+// page refreshes.
+const RESULTS_STORAGE_KEY = 'namegen_results_v1';
+
+interface StoredResults {
+  results?: string[];
+  aiResults?: ScoredName[];
+  aiCost?: number;
+  prefilterInfo?: PrefilterInfo | null;
+}
+
+function loadStoredResults(): StoredResults {
+  try {
+    const raw = localStorage.getItem(RESULTS_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch (err) {
+    console.error('Failed to restore results from localStorage:', err);
+    return {};
+  }
+}
+
+const storedResults = loadStoredResults();
+
 function App() {
-  const [activeTab, setActiveTab] = useState('training');
+  // Land on the results tab when a previous session's results were restored
+  const [activeTab, setActiveTab] = useState(storedResults.results?.length ? 'results' : 'training');
   const [config, setConfig] = useState<Config>({});
-  const [results, setResults] = useState<string[]>([]);
-  const [aiResults, setAIResults] = useState<ScoredName[]>([]);
+  const [results, setResults] = useState<string[]>(storedResults.results ?? []);
+  const [aiResults, setAIResults] = useState<ScoredName[]>(storedResults.aiResults ?? []);
   const [ratings, setRatings] = useState<Record<string, number>>({});
   const [error, setError] = useState<string | null>(null);
   const [showGenerationModal, setShowGenerationModal] = useState(false);
   const [aiLoading, setAILoading] = useState(false);
-  const [aiCost, setAICost] = useState<number>(0);
+  const [embedLoading, setEmbedLoading] = useState(false);
+  // Live progress of the embed-rank / AI-scoring SSE streams, shown as a
+  // small bar under the control buttons
+  const [taskProgress, setTaskProgress] = useState<{ label: string; done: number; total: number } | null>(null);
+  const [aiCost, setAICost] = useState<number>(storedResults.aiCost ?? 0);
+  const [prefilterInfo, setPrefilterInfo] = useState<PrefilterInfo | null>(storedResults.prefilterInfo ?? null);
+
+  // Persist results state so a page refresh doesn't wipe it
+  useEffect(() => {
+    try {
+      localStorage.setItem(RESULTS_STORAGE_KEY,
+        JSON.stringify({ results, aiResults, aiCost, prefilterInfo }));
+    } catch (err) {
+      console.error('Failed to persist results to localStorage:', err);
+    }
+  }, [results, aiResults, aiCost, prefilterInfo]);
   
   // UI state that persists across tab switches
   const [selectedSources, setSelectedSources] = useState<string[]>([]);
@@ -49,8 +89,17 @@ function App() {
     }
   };
 
+  // Persist config changes to the backend (debounced so slider drags don't
+  // fire a request per tick). Without this, parameter changes were lost on reload.
+  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const handleConfigChange = (newConfig: Config) => {
     setConfig(newConfig);
+    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+    saveTimeoutRef.current = setTimeout(() => {
+      apiService.updateConfig(newConfig).catch(err => {
+        console.error('Failed to save config:', err);
+      });
+    }, 500);
   };
 
   const handleGenerateNames = async () => {
@@ -89,6 +138,7 @@ function App() {
     setResults(names);
     setAIResults([]); // Clear AI results when generating new names
     setAICost(0); // Clear AI cost when generating new names
+    setPrefilterInfo(null);
     setShowGenerationModal(false);
     setActiveTab('results'); // Switch to results tab
   };
@@ -183,23 +233,36 @@ function App() {
     }
 
     setAILoading(true);
+    setTaskProgress(null);
     setError(null);
 
     try {
       // Get maxNames from config if it exists, otherwise default to 20
       const maxNames = config.ai_settings?.max_names || 20;
-      const namesToScore = results.slice(0, maxNames);
-      
-      const response = await apiService.scoreNamesWithAI({
+      const keywords = (llmConfig.keywords || '').trim();
+      // With vibe keywords set, send ALL generated names: the cheap embedding
+      // prefilter funnels them down to maxNames before the expensive LLM pass.
+      const namesToScore = keywords ? results : results.slice(0, maxNames);
+
+      const response = await apiService.scoreNamesWithAIStream({
         names: namesToScore,
         description: description.trim(),
         instructions: instructions.trim(),
         model: llmConfig.model || 'gpt-4o-mini',
-        max_chunk_size: llmConfig.max_chunk_size || 10
-      });
+        max_chunk_size: llmConfig.max_chunk_size || 10,
+        keywords,
+        prefilter_keep: maxNames,
+        embedding_model: llmConfig.embedding_model,
+        min_similarity: llmConfig.min_similarity || 0
+      }, (phase, done, total) => setTaskProgress({
+        label: phase === 'embedding' ? 'embedding' : 'scoring chunk',
+        done,
+        total
+      }));
       
       setAIResults(response.scored_names);
       setAICost(response.total_cost);
+      setPrefilterInfo(response.prefilter);
       setActiveTab('results');
       
       // Update and save config with current settings including UI state
@@ -235,10 +298,52 @@ function App() {
       }
       
     } catch (err: any) {
-      setError(err.response?.data?.error || 'Failed to score names with AI');
+      setError(err.response?.data?.error || err.message || 'Failed to score names with AI');
       console.error('AI scoring error:', err);
     } finally {
       setAILoading(false);
+      setTaskProgress(null);
+    }
+  };
+
+  // Embedding-only ranking: rank ALL current results against the vibe keywords
+  // (cheap, no LLM call) and surface the similarities in the Results tab.
+  const handleEmbedRank = async () => {
+    if (!results || results.length === 0) {
+      setError('No existing results to rank. Please generate names first.');
+      return;
+    }
+    const keywords = (config.llm?.keywords || '').trim();
+    if (!keywords) {
+      setError('Set some vibe keywords in the AI tab first — they are the anchors names get ranked against.');
+      setActiveTab('ai');
+      return;
+    }
+
+    setEmbedLoading(true);
+    setTaskProgress(null);
+    setError(null);
+    try {
+      const response = await apiService.embedRankNamesStream({
+        names: results,
+        keywords,
+        embedding_model: config.llm?.embedding_model
+      }, (done, total) => setTaskProgress({ label: 'embedding', done, total }));
+      // Merge similarities into AI results, preserving any existing LLM scores.
+      const existingScores = new Map(aiResults.map(r => [r.name, r.score]));
+      setAIResults(response.ranked.map(r => ({
+        name: r.name,
+        score: existingScores.get(r.name),
+        similarity: r.similarity
+      })));
+      setAICost(prev => prev + response.cost);
+      setActiveTab('results');
+    } catch (err: any) {
+      setError(err.response?.data?.error || err.message || 'Failed to rank names by embedding similarity');
+      console.error('Embedding rank error:', err);
+    } finally {
+      setEmbedLoading(false);
+      setTaskProgress(null);
     }
   };
 
@@ -256,12 +361,13 @@ function App() {
         {/* Header */}
         <div className="flex items-start justify-between mb-8">
           <div>
-            <h1 className="text-3xl font-bold mb-2">Markov Name Generator</h1>
-            <p className="text-muted">Generate unique names using Markov chains and AI scoring</p>
+            <h1 className="app-title">The Name<span className="title-accent">forge</span></h1>
+            <p className="app-subtitle">Markov-chain name generation, distilled &amp; scored</p>
           </div>
           
           {/* Control Buttons */}
-          <div className="grid grid-cols-2 gap-2 w-64">
+          <div className="w-64">
+          <div className="grid grid-cols-2 gap-2">
             <button
               className="btn btn-primary btn-compact"
               onClick={handleGenerateNames}
@@ -290,6 +396,25 @@ function App() {
 
             <button
               className="btn btn-secondary btn-compact"
+              onClick={handleEmbedRank}
+              disabled={embedLoading || results.length === 0}
+              title="Rank current results by embedding similarity to the vibe keywords (AI tab) — no LLM cost"
+            >
+              {embedLoading ? (
+                <>
+                  <div className="loading-spinner-small"></div>
+                  Ranking...
+                </>
+              ) : (
+                <>
+                  <Sparkles size={12} />
+                  Embed Rank
+                </>
+              )}
+            </button>
+
+            <button
+              className="btn btn-secondary btn-compact"
               onClick={handleSaveConfig}
             >
               <Save size={12} />
@@ -303,6 +428,36 @@ function App() {
               <FolderOpen size={12} />
               Load Config
             </button>
+          </div>
+
+          {/* Live progress (SSE) during Embed Rank and AI Score Names */}
+          {(embedLoading || aiLoading) && (
+            <div className="mt-2">
+              <div className="progress-meta">
+                <span>
+                  {taskProgress
+                    ? `${taskProgress.label} ${taskProgress.done}/${taskProgress.total}`
+                    : 'working…'}
+                </span>
+                <span>
+                  {taskProgress
+                    ? `${Math.round((taskProgress.done / taskProgress.total) * 100)}%`
+                    : ''}
+                </span>
+              </div>
+              <div className="progress-track">
+                <div
+                  className="progress-fill"
+                  style={{
+                    width: taskProgress
+                      ? `${Math.min((taskProgress.done / taskProgress.total) * 100, 100)}%`
+                      : '0%',
+                    minWidth: '4px'
+                  }}
+                />
+              </div>
+            </div>
+          )}
           </div>
         </div>
 
@@ -352,6 +507,8 @@ function App() {
               onRateChange={handleRateChange}
               onAIScoreClick={() => setActiveTab('ai')}
               aiCost={aiCost}
+              prefilterInfo={prefilterInfo}
+              simCutoff={config.llm?.min_similarity}
             />
           )}
 
@@ -379,7 +536,7 @@ function App() {
 
         {/* Error Display */}
         {error && (
-          <div className="mt-4 p-4 bg-error-color/10 border border-error-color rounded">
+          <div className="mt-4 error-banner">
             <p className="error-message">{error}</p>
           </div>
         )}

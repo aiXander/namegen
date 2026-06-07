@@ -141,13 +141,13 @@ const SavedResultsTab: React.FC<SavedResultsTabProps> = ({ ratings, onRatingsCha
                     </button>
                   </div>
                   
-                  {/* Name versions in horizontal layout */}
-                  <div className="flex items-center justify-center flex-1">
-                    <span className="font-bold text-lg">{name.toLowerCase()}</span>
-                    <span className="text-muted">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;|&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>
-                    <span className="font-bold text-lg">{name.charAt(0).toUpperCase() + name.slice(1).toLowerCase()}</span>
-                    <span className="text-muted">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;|&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>
-                    <span className="font-bold text-lg">{name.toUpperCase()}</span>
+                  {/* Name in three case treatments */}
+                  <div className="flex items-center justify-center flex-1" style={{ gap: '28px' }}>
+                    <span className="name-display">{name.toLowerCase()}</span>
+                    <span className="text-muted" style={{ opacity: 0.4 }}>·</span>
+                    <span className="name-display">{name.charAt(0).toUpperCase() + name.slice(1).toLowerCase()}</span>
+                    <span className="text-muted" style={{ opacity: 0.4 }}>·</span>
+                    <span className="name-display" style={{ letterSpacing: '0.08em', fontSize: '0.95rem' }}>{name.toUpperCase()}</span>
                   </div>
                   
                   {/* Rating */}

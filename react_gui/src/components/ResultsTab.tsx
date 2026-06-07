@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { ChevronUp, ChevronDown, Bot } from 'lucide-react';
-import { apiService, ScoredName } from '../services/api';
+import { apiService, ScoredName, PrefilterInfo } from '../services/api';
 import StarRating from './StarRating';
 
 interface ResultsTabProps {
@@ -10,45 +10,64 @@ interface ResultsTabProps {
   onRateChange: (name: string, rating: number) => void;
   onAIScoreClick?: () => void;
   aiCost?: number;
+  prefilterInfo?: PrefilterInfo | null;
+  simCutoff?: number;
 }
 
 interface ResultItem {
   name: string;
   aiScore: number | null;
+  similarity: number | null;
+  /** Multiplicative blend of vibe similarity and AI score; null unless both exist */
+  combined: number | null;
   userRating: number;
 }
 
-const ResultsTab: React.FC<ResultsTabProps> = ({ 
-  results, 
-  aiResults, 
-  ratings, 
+const ResultsTab: React.FC<ResultsTabProps> = ({
+  results,
+  aiResults,
+  ratings,
   onRateChange,
   onAIScoreClick,
-  aiCost 
+  aiCost,
+  prefilterInfo,
+  simCutoff
 }) => {
-  const [sortColumn, setSortColumn] = useState<'name' | 'aiScore' | 'userRating'>('name');
+  const [sortColumn, setSortColumn] = useState<'name' | 'aiScore' | 'similarity' | 'combined' | 'userRating'>('name');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
   const [tableData, setTableData] = useState<ResultItem[]>([]);
 
   useEffect(() => {
-    // Combine results with AI scores
+    // Combine results with AI scores / embedding similarities
     const combinedData: ResultItem[] = results.map(name => {
       const aiResult = aiResults.find(ai => ai.name === name);
+      const aiScore = aiResult?.score ?? null;
+      const similarity = aiResult?.similarity ?? null;
       return {
         name,
-        aiScore: aiResult ? aiResult.score : null,
+        aiScore,
+        similarity,
+        combined: aiScore !== null && similarity !== null ? aiScore * similarity : null,
         userRating: ratings[name] || 0
       };
     });
-    
+
     setTableData(combinedData);
-    
-    // Auto-sort by AI score if AI results are available
+
+    // Auto-sort by the combined ranking when both signals exist, else by AI
+    // score if available, else by embedding similarity
     if (aiResults.length > 0) {
-      setSortColumn('aiScore');
+      const hasScores = aiResults.some(ai => ai.score !== undefined && ai.score !== null);
+      const hasCombined = aiResults.some(ai =>
+        ai.score !== undefined && ai.score !== null &&
+        ai.similarity !== undefined && ai.similarity !== null);
+      setSortColumn(hasCombined ? 'combined' : hasScores ? 'aiScore' : 'similarity');
       setSortDirection('desc');
     }
   }, [results, aiResults, ratings]);
+
+  const hasSimilarities = tableData.some(item => item.similarity !== null);
+  const hasCombined = tableData.some(item => item.combined !== null);
 
   const handleRateChange = async (name: string, rating: number) => {
     try {
@@ -59,12 +78,13 @@ const ResultsTab: React.FC<ResultsTabProps> = ({
     }
   };
 
-  const handleSort = (column: 'name' | 'aiScore' | 'userRating') => {
+  const handleSort = (column: 'name' | 'aiScore' | 'similarity' | 'combined' | 'userRating') => {
     if (sortColumn === column) {
       setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
     } else {
       setSortColumn(column);
-      setSortDirection(column === 'aiScore' ? 'desc' : 'asc'); // Default to descending for AI scores
+      // Default to descending for score-like columns
+      setSortDirection(column === 'aiScore' || column === 'similarity' || column === 'combined' ? 'desc' : 'asc');
     }
   };
 
@@ -81,6 +101,14 @@ const ResultsTab: React.FC<ResultsTabProps> = ({
           aValue = a.aiScore ?? -1; // Treat null as lowest value
           bValue = b.aiScore ?? -1;
           break;
+        case 'similarity':
+          aValue = a.similarity ?? -1;
+          bValue = b.similarity ?? -1;
+          break;
+        case 'combined':
+          aValue = a.combined ?? -1;
+          bValue = b.combined ?? -1;
+          break;
         case 'userRating':
           aValue = a.userRating;
           bValue = b.userRating;
@@ -93,18 +121,6 @@ const ResultsTab: React.FC<ResultsTabProps> = ({
       if (aValue > bValue) return sortDirection === 'asc' ? 1 : -1;
       return 0;
     });
-  };
-
-  const renderStars = (rating: number) => {
-    const stars = [];
-    for (let i = 1; i <= 5; i++) {
-      stars.push(
-        <span key={i} className={i <= rating ? 'text-star-color' : 'text-gray-400'}>
-          ★
-        </span>
-      );
-    }
-    return stars;
   };
 
   return (
@@ -123,14 +139,28 @@ const ResultsTab: React.FC<ResultsTabProps> = ({
             </button>
           )}
           {aiCost !== undefined && aiCost > 0 && (
-            <div className="text-sm text-blue-400 bg-blue-400/10 px-3 py-1 rounded-md border border-blue-400/20">
-              AI Scoring Cost: ${aiCost.toFixed(4)}
+            <div className="cost-badge">
+              AI cost ${aiCost.toFixed(4)}
+            </div>
+          )}
+          {prefilterInfo && (
+            <div
+              className="cost-badge"
+              title={`Embedding pre-filter (${prefilterInfo.embedding_model}) kept the ${prefilterInfo.kept} names most similar to: ${prefilterInfo.keywords.join(', ')}`}
+            >
+              Embed filter: kept {prefilterInfo.kept}/{prefilterInfo.total}
+              {(prefilterInfo.min_similarity ?? 0) > 0 && ` (sim ≥ ${prefilterInfo.min_similarity!.toFixed(2)})`}
             </div>
           )}
         </div>
         {aiResults.length > 0 && (
-          <div className="text-sm text-green-400">
-            AI scores available for {aiResults.length} names
+          <div className="status-good">
+            {(() => {
+              const scoredCount = aiResults.filter(ai => ai.score !== undefined && ai.score !== null).length;
+              return scoredCount > 0
+                ? `AI scores available for ${scoredCount} names`
+                : `Embedding similarities for ${aiResults.length} names`;
+            })()}
           </div>
         )}
       </div>
@@ -148,7 +178,7 @@ const ResultsTab: React.FC<ResultsTabProps> = ({
           {/* Results table */}
           <div className="max-h-128 overflow-y-auto">
             <table className="w-full">
-              <thead className="sticky top-0 border-b border-border-color" style={{ backgroundColor: '#1a1a1a', zIndex: 20 }}>
+              <thead className="sticky top-0" style={{ zIndex: 20 }}>
                 <tr>
                   <th className="text-left py-3 px-4 w-12">
                     <span className="text-sm font-medium text-primary">#</span>
@@ -164,7 +194,20 @@ const ResultsTab: React.FC<ResultsTabProps> = ({
                       )}
                     </div>
                   </th>
-                  <th 
+                  {hasSimilarities && (
+                    <th
+                      className="text-left py-3 px-4 cursor-pointer hover:bg-bg-hover w-32"
+                      onClick={() => handleSort('similarity')}
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium text-primary">Vibe Sim</span>
+                        {sortColumn === 'similarity' && (
+                          sortDirection === 'asc' ? <ChevronUp size={14} /> : <ChevronDown size={14} />
+                        )}
+                      </div>
+                    </th>
+                  )}
+                  <th
                     className="text-left py-3 px-4 cursor-pointer hover:bg-bg-hover w-32"
                     onClick={() => handleSort('aiScore')}
                   >
@@ -175,7 +218,21 @@ const ResultsTab: React.FC<ResultsTabProps> = ({
                       )}
                     </div>
                   </th>
-                  <th 
+                  {hasCombined && (
+                    <th
+                      className="text-left py-3 px-4 cursor-pointer hover:bg-bg-hover w-32"
+                      onClick={() => handleSort('combined')}
+                      title="Vibe similarity × AI score — blends both rankings"
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium text-primary">Sim × Score</span>
+                        {sortColumn === 'combined' && (
+                          sortDirection === 'asc' ? <ChevronUp size={14} /> : <ChevronDown size={14} />
+                        )}
+                      </div>
+                    </th>
+                  )}
+                  <th
                     className="text-left py-3 px-4 cursor-pointer hover:bg-bg-hover w-40"
                     onClick={() => handleSort('userRating')}
                   >
@@ -190,22 +247,54 @@ const ResultsTab: React.FC<ResultsTabProps> = ({
               </thead>
               <tbody>
                 {getSortedData().map((item, index) => (
-                  <tr key={item.name} className="border-b border-border-color hover:bg-bg-hover">
+                  <tr
+                    key={item.name}
+                    className="border-b border-border-color hover:bg-bg-hover"
+                    // Dim names that fall below the vibe-sim cutoff: these will be
+                    // skipped by the embedding pre-filter during "AI Score Names".
+                    style={
+                      simCutoff && simCutoff > 0 && item.similarity !== null && item.similarity < simCutoff
+                        ? { opacity: 0.4 }
+                        : undefined
+                    }
+                  >
                     <td className="py-3 px-4 text-sm text-muted">
                       {index + 1}
                     </td>
                     <td className="py-3 px-4">
-                      <span className="font-medium">{item.name}</span>
+                      <span className="name-display">{item.name}</span>
                     </td>
+                    {hasSimilarities && (
+                      <td className="py-3 px-4">
+                        {item.similarity !== null ? (
+                          <span className="text-accent-primary font-mono">
+                            {item.similarity.toFixed(3)}
+                          </span>
+                        ) : (
+                          <span className="text-muted text-sm">—</span>
+                        )}
+                      </td>
+                    )}
                     <td className="py-3 px-4">
                       {item.aiScore !== null ? (
-                        <span className="text-blue-400 font-bold">
+                        <span className="text-accent-primary font-mono font-semibold">
                           {Number.isInteger(item.aiScore) ? item.aiScore : item.aiScore.toFixed(1)}
                         </span>
                       ) : (
                         <span className="text-muted text-sm">—</span>
                       )}
                     </td>
+                    {hasCombined && (
+                      <td className="py-3 px-4">
+                        {item.combined !== null ? (
+                          <span className="text-accent-primary font-mono">
+                            {item.combined.toFixed(2)}
+                          </span>
+                        ) : (
+                          <span className="text-muted text-sm">—</span>
+                        )}
+                      </td>
+                    )}
                     <td className="py-3 px-4">
                       <div className="flex items-center gap-2">
                         <StarRating

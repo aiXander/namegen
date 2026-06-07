@@ -1,5 +1,5 @@
 ai_settings:
-  max_names: 100
+  max_names: 500
 filtering:
   exclude_training_words: true
   min_edit_distance: 2
@@ -7,14 +7,23 @@ filtering:
 generation:
   ends_with: a
   excludes: ''
-  includes: ''
-  max_length: 9
+  includes: co
+  max_length: 8
   max_time_per_name: 3
-  min_length: 4
-  n_words: 100
+  min_length: 5
+  n_words: 4000
   regex_pattern: ''
-  starts_with: co
+  starts_with: ''
 llm:
+  available_models:
+  - google/gemini-3.1-flash-lite-preview
+  - google/gemini-3.1-pro
+  - openai/gpt-5-mini
+  - openai/gpt-5-nano
+  - deepseek/deepseek-v4-pro
+  - anthropic/claude-opus-4.8
+  - anthropic/claude-haiku-4.5
+  - anthropic/claude-sonnet-4.6
   default_instructions: Based on the provided description and scored names, score
     the following generated name ideas on a scale of 0 to 5, where 5 is excellent
     and 0 is poor (use integer scores). Consider factors like memorability, relevance,
@@ -22,16 +31,20 @@ llm:
     are the actual name strings and values are the scores.
   description: We are going to evaluate names for an AI agent that acts as the collective
     mind for communities and organizations. This agent will embody the collective
-    consciousness of the group, act as echochamber, brainstorming partner, collective
-    memory and coordination agent for teams, communities, festivals and decentralized
-    organisations. The name should feel welcoming, organic, meta, but also grand and
-    present. Ideally, the name has some hints as to its purpose.
+    consciousness of the group, act as echochamber, brainstorming partner, matchmaker,
+    collective memory and coordination agent for teams, communities, events, festivals
+    and decentralized organisations. The name should feel welcoming, organic, but
+    also grounded and present. Ideally, the name has some hints as to its purpose.
+  embedding_model: google/gemini-embedding-2
+  keywords: murmuration, community, collective, swarm, gigabrain, mycelium, colony,
+    hive
   max_chunk_size: 15
-  model: gpt-5-mini
+  min_similarity: 0.45
+  model: deepseek/deepseek-v4-pro
 model:
-  backoff: false
+  backoff: true
   order: 3
-  temperature: 0.6
+  temperature: 1.1
 output:
   format: list
   output_file: generated_names.txt
@@ -64,7 +77,6 @@ training_data:
   - theological_angels.txt
   - theological_demons.txt
   - tolkienesque_forenames.txt
-  - websites.txt
 word_list_ratings:
   american_cities.txt: 0
   american_companies.txt: 0

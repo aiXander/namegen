@@ -31,8 +31,9 @@ const TrainingDataTab: React.FC<TrainingDataTabProps> = ({
   const [selectedWordList, setSelectedWordList] = useState<WordListContent | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [viewMode, setViewMode] = useState<'sorted' | 'random'>('sorted');
-  const [sortColumn, setSortColumn] = useState<'name' | 'word_count' | 'rating'>('name');
+  const [sortColumn, setSortColumn] = useState<'name' | 'word_count' | 'rating' | 'health'>('name');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+  const [minHealth, setMinHealth] = useState(0);
 
   useEffect(() => {
     loadWordLists();
@@ -62,7 +63,8 @@ const TrainingDataTab: React.FC<TrainingDataTabProps> = ({
   };
 
   const handleSelectAll = () => {
-    const allFilenames = wordLists.map(wl => wl.filename);
+    // Only select lists currently visible (i.e. passing the Markov-health filter)
+    const allFilenames = getSortedWordLists().map(wl => wl.filename);
     setSelectedSources(allFilenames);
   };
 
@@ -71,7 +73,7 @@ const TrainingDataTab: React.FC<TrainingDataTabProps> = ({
   };
 
   const handleSelectByScore = () => {
-    const filteredFilenames = wordLists
+    const filteredFilenames = getSortedWordLists()
       .filter(wl => wl.rating >= minScore && wl.rating <= maxScore)
       .map(wl => wl.filename);
     
@@ -100,7 +102,7 @@ const TrainingDataTab: React.FC<TrainingDataTabProps> = ({
     }
   };
 
-  const handleSort = (column: 'name' | 'word_count' | 'rating') => {
+  const handleSort = (column: 'name' | 'word_count' | 'rating' | 'health') => {
     if (sortColumn === column) {
       setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
     } else {
@@ -126,6 +128,10 @@ const TrainingDataTab: React.FC<TrainingDataTabProps> = ({
           aValue = a.rating;
           bValue = b.rating;
           break;
+        case 'health':
+          aValue = a.health?.score ?? -1;
+          bValue = b.health?.score ?? -1;
+          break;
         default:
           return 0;
       }
@@ -135,7 +141,23 @@ const TrainingDataTab: React.FC<TrainingDataTabProps> = ({
       return 0;
     });
     
-    return sorted;
+    return sorted.filter(wl => (wl.health?.score ?? 0) >= minHealth);
+  };
+
+  // Markov-health badge: green = good novel-name statistics, red = model will mostly
+  // replay training words (low branching factor / high memorization).
+  const healthColor = (score: number) => {
+    if (score >= 50) return '#22c55e';
+    if (score >= 30) return '#eab308';
+    return '#ef4444';
+  };
+
+  const healthTooltip = (wl: WordList) => {
+    if (!wl.health) return 'No stats available';
+    const h = wl.health;
+    return `Branching factor: ${(h.branching_factor * 100).toFixed(0)}% of contexts have ≥2 successors\n` +
+      `Memorization: ${(h.memorization_rate * 100).toFixed(0)}% of generations replay training words\n` +
+      `${h.unique_contexts} unique contexts / ${h.unique_words} unique words`;
   };
 
   const getTotalSelectedWords = () => {
@@ -245,10 +267,31 @@ const TrainingDataTab: React.FC<TrainingDataTabProps> = ({
         </div>
       </div>
 
+      {/* Markov health filter */}
+      <div className="card mb-4">
+        <div className="card-header">Filter by Markov Health</div>
+        <div className="flex items-center gap-4">
+          <input
+            type="range"
+            min="0"
+            max="100"
+            value={minHealth}
+            onChange={(e) => setMinHealth(parseInt(e.target.value))}
+            style={{ width: '50%' }}
+          />
+          <span className="text-sm font-medium whitespace-nowrap">
+            Min health: {minHealth}
+          </span>
+          <span className="text-sm text-muted">
+            (hides lists whose statistics mostly replay training words)
+          </span>
+        </div>
+      </div>
+
       {/* Word lists table */}
       <div className="max-h-96 overflow-y-auto">
         <table className="w-full">
-          <thead className="sticky top-0 border-b border-border-color" style={{ backgroundColor: '#1a1a1a', zIndex: 20 }}>
+          <thead className="sticky top-0" style={{ zIndex: 20 }}>
             <tr>
               <th className="text-left py-3 px-4 w-12">
                 <span className="text-sm font-medium text-primary">Select</span>
@@ -278,7 +321,18 @@ const TrainingDataTab: React.FC<TrainingDataTabProps> = ({
                   )}
                 </div>
               </th>
-              <th 
+              <th
+                className="text-left py-3 px-4 cursor-pointer hover:bg-bg-hover w-28"
+                onClick={() => handleSort('health')}
+              >
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium text-primary">Health</span>
+                  {sortColumn === 'health' && (
+                    sortDirection === 'asc' ? <ChevronUp size={14} /> : <ChevronDown size={14} />
+                  )}
+                </div>
+              </th>
+              <th
                 className="text-left py-3 px-4 cursor-pointer hover:bg-bg-hover w-32"
                 onClick={() => handleSort('rating')}
               >
@@ -318,6 +372,29 @@ const TrainingDataTab: React.FC<TrainingDataTabProps> = ({
                   </td>
                   <td className="py-3 px-4">
                     <span className="text-sm">{wordList.word_count.toLocaleString()}</span>
+                  </td>
+                  <td className="py-3 px-4">
+                    {wordList.health ? (
+                      <span
+                        title={healthTooltip(wordList)}
+                        style={{
+                          display: 'inline-block',
+                          minWidth: '2.5rem',
+                          textAlign: 'center',
+                          padding: '2px 8px',
+                          borderRadius: '9999px',
+                          fontSize: '0.8rem',
+                          fontWeight: 600,
+                          color: '#fff',
+                          backgroundColor: healthColor(wordList.health.score),
+                          cursor: 'help',
+                        }}
+                      >
+                        {wordList.health.score}
+                      </span>
+                    ) : (
+                      <span className="text-sm text-muted">—</span>
+                    )}
                   </td>
                   <td className="py-3 px-4">
                     <StarRating

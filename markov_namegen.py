@@ -3,8 +3,14 @@ import json
 import csv
 import yaml
 import random
-from typing import List, Set, Dict, Any
+from typing import Iterable, List
+from rapidfuzz import process as _rf_process
+from rapidfuzz.distance import Levenshtein
 from markov.name_generator import NameGenerator
+
+# Cleaned dataset (produced by scripts/clean_word_lists.py) is preferred;
+# fall back to the raw originals if it hasn't been generated yet.
+WORD_LISTS_DIR = "word_lists_clean" if os.path.isdir("word_lists_clean") else "word_lists"
 
 
 def load_word_list(filepath: str) -> List[str]:
@@ -15,23 +21,24 @@ def load_word_list(filepath: str) -> List[str]:
 
 def edit_distance(s1: str, s2: str) -> int:
     """Calculate edit distance between two strings"""
-    if len(s1) < len(s2):
-        return edit_distance(s2, s1)
-    
-    if len(s2) == 0:
-        return len(s1)
-    
-    previous_row = list(range(len(s2) + 1))
-    for i, c1 in enumerate(s1):
-        current_row = [i + 1]
-        for j, c2 in enumerate(s2):
-            insertions = previous_row[j + 1] + 1
-            deletions = current_row[j] + 1
-            substitutions = previous_row[j] + (c1 != c2)
-            current_row.append(min(insertions, deletions, substitutions))
-        previous_row = current_row
-    
-    return previous_row[-1]
+    return Levenshtein.distance(s1, s2)
+
+
+def too_close_to_training(name: str, training_words: Iterable[str], min_distance: int) -> bool:
+    """True if any training word is within edit distance < min_distance of `name`.
+
+    Uses rapidfuzz's C++ Levenshtein with a score cutoff (banded DP + early
+    abort per pair). The pure-Python DP scan over the full training set was
+    ~200ms per candidate on ~43k words — the dominant cost of generation,
+    dwarfing the Markov sampling itself (~0.06ms per attempt).
+    """
+    if min_distance <= 0:
+        return False
+    return _rf_process.extractOne(
+        name, training_words,
+        scorer=Levenshtein.distance,
+        score_cutoff=min_distance - 1,
+    ) is not None
 
 
 class MarkovNameGenerator:
@@ -59,7 +66,7 @@ class MarkovNameGenerator:
         filter_special_chars = self.config['training_data'].get('filter_special_chars', True)
         
         for source in sources:
-            filepath = os.path.join("word_lists", source)
+            filepath = os.path.join(WORD_LISTS_DIR, source)
             if os.path.exists(filepath):
                 words.extend(load_word_list(filepath))
             else:
@@ -136,10 +143,10 @@ class MarkovNameGenerator:
         # Remove names too similar to training data
         min_distance = filter_config.get('min_edit_distance', 0)
         if min_distance > 0:
+            unique_training = list(set(self.training_words))
             filtered_names = [
                 name for name in filtered_names
-                if all(edit_distance(name, training_word) >= min_distance 
-                      for training_word in self.training_words)
+                if not too_close_to_training(name, unique_training, min_distance)
             ]
         
         return filtered_names

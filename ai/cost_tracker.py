@@ -104,24 +104,24 @@ class CostTracker:
         """Print a formatted cost summary."""
         stats = self.get_stats()
         
-        print(f"\n💰 COST SUMMARY")
+        print("\n💰 COST SUMMARY")
         print("=" * 50)
         print(f"Total Cost: ${stats['total_cost']:.4f}")
         print(f"Total API Calls: {stats['total_calls']}")
         print(f"Total Input Tokens: {stats['total_input_tokens']:,}")
         print(f"Total Output Tokens: {stats['total_output_tokens']:,}")
         
-        print(f"\n📊 BREAKDOWN BY CALL TYPE:")
+        print("\n📊 BREAKDOWN BY CALL TYPE:")
         for call_type, cost in stats['call_type_costs'].items():
             call_count = stats.get(f'{call_type}_calls', 0)
             print(f"  {call_type.title()}: ${cost:.4f} ({call_count} calls)")
         
-        print(f"\n🧩 BREAKDOWN BY COMPONENT:")
+        print("\n🧩 BREAKDOWN BY COMPONENT:")
         for component, cost in sorted(stats['component_costs'].items()):
             percentage = (cost / stats['total_cost'] * 100) if stats['total_cost'] > 0 else 0
             print(f"  {component}: ${cost:.4f} ({percentage:.1f}%)")
         
-        print(f"\n🤖 BREAKDOWN BY MODEL:")
+        print("\n🤖 BREAKDOWN BY MODEL:")
         for model, cost in sorted(stats['model_costs'].items()):
             percentage = (cost / stats['total_cost'] * 100) if stats['total_cost'] > 0 else 0
             print(f"  {model}: ${cost:.4f} ({percentage:.1f}%)")

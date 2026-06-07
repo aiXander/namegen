@@ -23,15 +23,20 @@ const AITab: React.FC<AITabProps> = ({
   maxScore 
 }) => {
   const [description, setDescription] = useState('');
+  const [keywords, setKeywords] = useState('');
   const [instructions, setInstructions] = useState('');
   const [aiModels, setAIModels] = useState<string[]>([]);
-  const [selectedModel, setSelectedModel] = useState('gpt-4o-mini');
+  const [selectedModel, setSelectedModel] = useState('google/gemini-3.1-flash-lite-preview');
   const [maxNames, setMaxNames] = useState(20);
   const [chunkSize, setChunkSize] = useState(10);
+  const [minSimilarity, setMinSimilarity] = useState(0);
 
+  // Initialize local state from config once on mount. Depending on `config`
+  // here caused the effect (including the loadAIModels API call) to re-run on
+  // every keystroke, since each onChange pushes a new config object upstream.
   useEffect(() => {
     loadAIModels();
-    
+
     // Load default instructions and description from config
     const llmConfig = config.llm || {};
     if (llmConfig.default_instructions) {
@@ -43,12 +48,20 @@ const AITab: React.FC<AITabProps> = ({
     if (llmConfig.description) {
       setDescription(llmConfig.description);
     }
-    
+
+    if (llmConfig.keywords) {
+      setKeywords(llmConfig.keywords);
+    }
+
+    if (llmConfig.min_similarity) {
+      setMinSimilarity(llmConfig.min_similarity);
+    }
+
     if (llmConfig.model) {
       setSelectedModel(llmConfig.model);
     } else {
       // If no model is set in config, set the default and update config
-      const defaultModel = 'gpt-4o-mini';
+      const defaultModel = 'google/gemini-3.1-flash-lite-preview';
       setSelectedModel(defaultModel);
       const updatedConfig = {
         ...config,
@@ -70,7 +83,8 @@ const AITab: React.FC<AITabProps> = ({
     } else if (llmConfig.max_names) {
       setMaxNames(llmConfig.max_names);
     }
-  }, [config]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const loadAIModels = async () => {
     try {
@@ -78,7 +92,7 @@ const AITab: React.FC<AITabProps> = ({
       setAIModels(response.models);
     } catch (err) {
       console.error('Failed to load AI models:', err);
-      setAIModels(['gpt-3.5-turbo', 'gpt-4']);
+      setAIModels(['google/gemini-3.1-flash-lite-preview']);
     }
   };
 
@@ -112,6 +126,68 @@ const AITab: React.FC<AITabProps> = ({
             placeholder="Describe what these names are for..."
             rows={3}
           />
+        </div>
+      </div>
+
+      {/* Vibe Keywords (embedding prefilter) */}
+      <div className="card mb-4">
+        <div className="card-header">Vibe Keywords (embedding pre-filter)</div>
+        <div className="form-group">
+          <label className="form-label">
+            Comma-separated keywords matching the vibe/meaning you want. Trigger via
+            the "Embed Rank" button (top-right) to rank all generated names by
+            embedding similarity to these anchors — cheap, no LLM cost. They also
+            act as a pre-filter for "AI Score Names": only the top "Max names to
+            score" reach the LLM, so you can generate hundreds of candidates.
+          </label>
+          <input
+            type="text"
+            value={keywords}
+            onChange={(e) => {
+              setKeywords(e.target.value);
+              const updatedConfig = {
+                ...config,
+                llm: {
+                  ...config.llm,
+                  keywords: e.target.value
+                }
+              };
+              onConfigChange(updatedConfig);
+            }}
+            className="form-input"
+            placeholder="e.g. murmuration, chorus, collective dreaming, organic"
+          />
+        </div>
+        <div className="form-group">
+          <label className="form-label">
+            Min vibe similarity cutoff: {minSimilarity > 0 ? minSimilarity.toFixed(2) : 'off'}
+          </label>
+          <input
+            type="range"
+            min="0"
+            max="1"
+            step="0.01"
+            value={minSimilarity}
+            onChange={(e) => {
+              const value = parseFloat(e.target.value);
+              setMinSimilarity(value);
+              const updatedConfig = {
+                ...config,
+                llm: {
+                  ...config.llm,
+                  min_similarity: value
+                }
+              };
+              onConfigChange(updatedConfig);
+            }}
+            className="range-slider w-full"
+          />
+          <div className="text-muted text-sm">
+            Names below this embedding similarity never reach the LLM during
+            "AI Score Names" — even if fewer than "Max names to score" remain.
+            Run "Embed Rank" first and check the Vibe Sim column to pick a sensible
+            value. 0 disables the cutoff.
+          </div>
         </div>
       </div>
 
@@ -163,7 +239,9 @@ const AITab: React.FC<AITabProps> = ({
               }}
               className="form-select"
             >
-              {aiModels.map(model => (
+              {/* Keep the configured model selectable even if it's not in the
+                  list served from config.yaml's llm.available_models */}
+              {(aiModels.includes(selectedModel) ? aiModels : [selectedModel, ...aiModels]).map(model => (
                 <option key={model} value={model}>{model}</option>
               ))}
             </select>
@@ -174,7 +252,7 @@ const AITab: React.FC<AITabProps> = ({
             <input
               type="range"
               min="1"
-              max="100"
+              max="1000"
               value={maxNames}
               onChange={(e) => {
                 const value = parseInt(e.target.value);

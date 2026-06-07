@@ -1,0 +1,17 @@
+[project]
+name = "namegen"
+version = "0.1.0"
+description = "Markov-chain name generator with Flask API, React GUI and LLM scoring"
+requires-python = ">=3.10"
+dependencies = [
+    "flask>=2.3",
+    "flask-cors>=4.0",
+    "pyyaml>=6.0",
+    "openai>=1.0",
+    "python-dotenv>=1.2.2",
+    "wordninja>=2.0.0",
+    "rapidfuzz>=3.14.5",
+]
+
+[tool.ruff]
+line-length = 120

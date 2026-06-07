@@ -49,7 +49,7 @@ const SamplingParametersTab: React.FC<SamplingParametersTabProps> = ({ config, o
                   className="ml-2 text-xs text-blue-600 cursor-help" 
                   title="How many names to generate:&#10;• Small batch (1-10): Quick testing and experimentation&#10;• Medium batch (20-50): Good variety for evaluation&#10;• Large batch (50-100): Comprehensive exploration&#10;• Note: Complex constraints may produce fewer results"
                 >
-                  ℹ️
+                  ⓘ
                 </span>
               </label>
               <input
@@ -70,7 +70,7 @@ const SamplingParametersTab: React.FC<SamplingParametersTabProps> = ({ config, o
                   className="ml-2 text-xs text-blue-600 cursor-help" 
                   title="Control generated word length:&#10;• Short (3-6): Concise, punchy names&#10;• Medium (6-12): Balanced, most versatile&#10;• Long (12-20): Descriptive, compound-style&#10;• Components require longer lengths (8+ recommended)&#10;• Consider your use case: domains, brands, products"
                 >
-                  ℹ️
+                  ⓘ
                 </span>
               </label>
               <div className="flex items-center gap-4 mt-2">
@@ -127,7 +127,7 @@ const SamplingParametersTab: React.FC<SamplingParametersTabProps> = ({ config, o
             <label className="form-label">
               Multi-Component Generation 
               <div className="tooltip ml-2 inline-block">
-                <span className="text-xs text-blue-600 cursor-help">ℹ️</span>
+                <span className="text-xs text-blue-600 cursor-help">ⓘ</span>
                 <span className="tooltiptext">
                   Create words with specific required components:
                   • Components: Required substrings (e.g., 'co,mind,tech')
@@ -148,7 +148,7 @@ const SamplingParametersTab: React.FC<SamplingParametersTabProps> = ({ config, o
                 <label className="text-sm text-muted">
                   Required Components
                   <div className="tooltip ml-2 inline-block">
-                    <span className="text-xs text-blue-600 cursor-help">ℹ️</span>
+                    <span className="text-xs text-blue-600 cursor-help">ⓘ</span>
                     <span className="tooltiptext">
                       Comma-separated list of required substrings:
                       • 'co,mind' = words must contain both 'co' and 'mind'
@@ -178,7 +178,7 @@ const SamplingParametersTab: React.FC<SamplingParametersTabProps> = ({ config, o
                   <label className="text-sm text-muted">
                     Component Order
                     <div className="tooltip ml-2 inline-block">
-                      <span className="text-xs text-blue-600 cursor-help">ℹ️</span>
+                      <span className="text-xs text-blue-600 cursor-help">ⓘ</span>
                       <span className="tooltiptext">
                         Force specific component ordering:
                         • Leave empty for any order
@@ -214,7 +214,7 @@ const SamplingParametersTab: React.FC<SamplingParametersTabProps> = ({ config, o
                   <label className="text-sm text-muted">
                     Component Separation
                     <div className="tooltip ml-2 inline-block">
-                      <span className="text-xs text-blue-600 cursor-help">ℹ️</span>
+                      <span className="text-xs text-blue-600 cursor-help">ⓘ</span>
                       <span className="tooltiptext">
                         Control spacing between components:
                         • Format: 'min,max' characters
@@ -263,7 +263,7 @@ const SamplingParametersTab: React.FC<SamplingParametersTabProps> = ({ config, o
                     className="ml-2 text-xs text-blue-600 cursor-help" 
                     title="Force words to begin with specific text:&#10;• 'A' = words start with 'A'&#10;• 'neo' = words start with 'neo'&#10;• Works with components too!"
                   >
-                    ℹ️
+                    ⓘ
                   </span>
                 </label>
                 <input
@@ -282,7 +282,7 @@ const SamplingParametersTab: React.FC<SamplingParametersTabProps> = ({ config, o
                     className="ml-2 text-xs text-blue-600 cursor-help" 
                     title="Force words to end with specific text:&#10;• 'ing' = words end with 'ing'&#10;• 'tech' = words end with 'tech'&#10;• Works with components too!"
                   >
-                    ℹ️
+                    ⓘ
                   </span>
                 </label>
                 <input
@@ -298,18 +298,18 @@ const SamplingParametersTab: React.FC<SamplingParametersTabProps> = ({ config, o
                 <label className="text-sm text-muted">
                   Includes
                   <div className="tooltip ml-2 inline-block">
-                    <span className="text-xs text-blue-600 cursor-help">ℹ️</span>
+                    <span className="text-xs text-blue-600 cursor-help">ⓘ</span>
                     <span className="tooltiptext">
                       Pattern formats:
                       • 'x,a' = must contain BOTH x AND a
                       • 'x;a' = must contain EITHER x OR a
                       • 'x,a;b,c' = must contain (x AND a) OR (b AND c)
                       
-                      Examples: 
+                      Examples:
                       - 'an,er' = both 'an' and 'er'
                       - 'tech;bio' = either 'tech' or 'bio'
-                      
-                      Note: Different from Components - this is post-processing filter
+
+                      Note: Different from Components - sampling is guided toward these substrings, they can appear anywhere
                     </span>
                   </div>
                 </label>
@@ -333,9 +333,9 @@ const SamplingParametersTab: React.FC<SamplingParametersTabProps> = ({ config, o
                   Excludes
                   <span 
                     className="ml-2 text-xs text-blue-600 cursor-help" 
-                    title="Forbidden patterns:&#10;• 'x' = no words containing 'x'&#10;• 'tion' = no words containing 'tion'&#10;• Helps filter out unwanted patterns"
+                    title="Forbidden substrings:&#10;• 'x' = no words containing 'x'&#10;• 'tion' = no words containing 'tion'&#10;• 'th,ck' = neither 'th' nor 'ck' (comma-separated)"
                   >
-                    ℹ️
+                    ⓘ
                   </span>
                 </label>
                 <input
@@ -362,7 +362,7 @@ const SamplingParametersTab: React.FC<SamplingParametersTabProps> = ({ config, o
                 className="ml-2 text-xs text-blue-600 cursor-help" 
                 title="N-gram model order - how many previous characters to consider:&#10;• Order 1: Each letter depends only on the previous 1 letter&#10;• Order 2: Each letter depends on the previous 2 letters&#10;• Order 3: Each letter depends on the previous 3 letters&#10;• Higher = more realistic but less creative&#10;• Lower = more creative but less coherent&#10;• Recommended: 2-4 for most use cases"
               >
-                ℹ️
+                ⓘ
               </span>
             </label>
             <p className="text-sm text-muted mb-2">
@@ -391,7 +391,7 @@ const SamplingParametersTab: React.FC<SamplingParametersTabProps> = ({ config, o
                 className="ml-2 text-xs text-blue-600 cursor-help" 
                 title="Controls sampling randomness:&#10;• 0.1-0.5: Conservative, follows common patterns&#10;• 0.8-1.2: Balanced mix of common and uncommon patterns&#10;• 1.5-3.0: Creative, explores unusual combinations&#10;• 1.0 = use training distribution exactly&#10;• Higher values = more surprising results&#10;• Use with components for creative arrangements"
               >
-                ℹ️
+                ⓘ
               </span>
             </label>
             <p className="text-sm text-muted mb-2">
@@ -427,7 +427,7 @@ const SamplingParametersTab: React.FC<SamplingParametersTabProps> = ({ config, o
                   className="ml-2 text-xs text-blue-600 cursor-help" 
                   title="Intelligent fallback system:&#10;• When high-order patterns aren't found, try lower orders&#10;• Example: 'xyz' pattern not found → try 'yz' → try 'z'&#10;• Prevents generation failures with unusual constraints&#10;• Essential for component generation with tight constraints&#10;• Recommended: Keep enabled unless experimenting"
                 >
-                  ℹ️
+                  ⓘ
                 </span>
               </label>
             </div>

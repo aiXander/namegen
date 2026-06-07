@@ -1,13 +1,65 @@
 """
 Constraint-aware sampling system for Markov name generation.
-Provides modular, extensible constraint handling integrated into the sampling process.
+
+Constraints are integrated *during* sampling wherever possible:
+
+- ``starts_with`` seeds the sampling context.
+- ``excludes`` masks transitions that would complete a forbidden substring.
+- ``includes`` softly boosts transitions that make progress toward a required
+  token (only transitions the model already allows), so matching names are
+  found orders of magnitude faster than generate-then-filter.
+- ``ends_with`` is spliced on at a sampled splice point; the junction must be
+  a transition the (backed-off) model could actually have produced, and if it
+  isn't, the body keeps growing and the splice is retried at every length up
+  to the maximum — instead of rejecting the whole attempt.
+- Length is steered by masking termination below ``min_length`` and
+  progressively boosting it past a sampled target length.
+
+Whenever a constraint mask zeroes out every transition at the highest model
+order, sampling backs off to lower-order models (Katz-style) before giving up.
+A single posterior validation at the end guarantees correctness of whatever
+the integrated sampling produced.
 """
 
 import random
-import math
-from typing import List, Dict, Optional, Tuple, Callable
+from typing import List, Optional
 from dataclasses import dataclass
 from .markov_model import MarkovModel
+
+# Multiplier on '#' once the sampled target length is reached (compounds per
+# extra character, so words rarely overshoot the target by much).
+TERMINATION_BIAS = 4.0
+# Multiplier on the next character that advances an unmet `includes` token.
+# Only applied to transitions the model already allows (nonzero probability),
+# so guided names stay statistically consistent with the training data.
+INCLUDES_BOOST = 8.0
+
+
+def parse_includes_groups(includes_pattern: str) -> List[List[str]]:
+    """Parse an includes pattern into OR-groups of AND-tokens.
+
+    Format: 'x,a' = x AND a; 'x;a' = x OR a; 'x,a;b' = (x AND a) OR b.
+    """
+    groups = []
+    for group in includes_pattern.split(';'):
+        tokens = [token.strip() for token in group.split(',') if token.strip()]
+        if tokens:
+            groups.append(tokens)
+    return groups
+
+
+def meets_includes_constraint(word: str, includes_pattern: str) -> bool:
+    """Check a word against an includes pattern with AND/OR logic."""
+    groups = parse_includes_groups(includes_pattern)
+    if not groups:
+        return True
+    return any(all(token in word for token in group) for group in groups)
+
+
+def parse_excludes_tokens(excludes_pattern: str) -> List[str]:
+    """Parse forbidden substrings; ',' and ';' both separate multiple tokens."""
+    return [token.strip() for token in excludes_pattern.replace(';', ',').split(',')
+            if token.strip()]
 
 
 @dataclass
@@ -20,188 +72,47 @@ class GenerationConstraints:
     includes: str = ""
     excludes: str = ""
     regex_pattern: Optional[str] = None
-    
+
     def __post_init__(self):
         """Ensure all text constraints are lowercase"""
-        self.starts_with = self.starts_with.lower()
-        self.ends_with = self.ends_with.lower()
-        self.includes = self.includes.lower()
-        self.excludes = self.excludes.lower()
+        self.starts_with = self.starts_with.strip().lower()
+        self.ends_with = self.ends_with.strip().lower()
+        self.includes = self.includes.strip().lower()
+        self.excludes = self.excludes.strip().lower()
 
+    def includes_groups(self) -> List[List[str]]:
+        return parse_includes_groups(self.includes)
 
-class ProbabilityModifier:
-    """Utility functions for modifying probability distributions based on constraints"""
-    
-    @staticmethod
-    def mask_forbidden_transitions(probs: List[float], alphabet: List[str], 
-                                 current_word: str, excludes: str) -> List[float]:
-        """
-        Mask probabilities for characters that would create forbidden patterns.
-        
-        Args:
-            probs: Original probability distribution
-            alphabet: Character alphabet
-            current_word: Word being generated so far
-            excludes: Pattern to exclude
-            
-        Returns:
-            Modified probability distribution with forbidden transitions masked
-        """
-        if not excludes:
-            return probs.copy()
-            
-        modified_probs = probs.copy()
-        
-        for i, char in enumerate(alphabet):
-            if char == "#":  # Skip termination character for this check
-                continue
-                
-            # Create hypothetical next word state
-            hypothetical_word = current_word + char
-            
-            # Check if this would create the forbidden pattern
-            if ProbabilityModifier._would_create_forbidden_pattern(
-                hypothetical_word, excludes, len(excludes)
+    def excludes_tokens(self) -> List[str]:
+        return parse_excludes_tokens(self.excludes)
+
+    def is_feasible(self) -> bool:
+        """Cheap static check that the constraints aren't self-contradictory,
+        so callers can bail out immediately instead of burning their retry
+        budget on attempts that can never succeed."""
+        if self.min_length > self.max_length:
+            return False
+        if len(self.starts_with) + len(self.ends_with) > self.max_length:
+            return False
+
+        excludes = self.excludes_tokens()
+
+        def violates(text: str) -> bool:
+            return any(token in text for token in excludes)
+
+        if violates(self.starts_with) or violates(self.ends_with):
+            return False
+
+        groups = self.includes_groups()
+        if groups:
+            # At least one OR-group must be satisfiable: none of its tokens may
+            # contain a forbidden substring or exceed the maximum length.
+            if not any(
+                all(not violates(token) and len(token) <= self.max_length for token in group)
+                for group in groups
             ):
-                modified_probs[i] = 0.0
-        
-        # Renormalize probabilities
-        total = sum(modified_probs)
-        if total > 0:
-            modified_probs = [p / total for p in modified_probs]
-        else:
-            # If all transitions forbidden, return original (will be handled upstream)
-            modified_probs = probs.copy()
-            
-        return modified_probs
-    
-    @staticmethod
-    def _would_create_forbidden_pattern(word: str, excludes: str, max_check_length: int) -> bool:
-        """Check if adding a character would create a forbidden pattern"""
-        # Check the last max_check_length characters for the forbidden pattern
-        check_segment = word[-max_check_length:]
-        return excludes in check_segment
-    
-    @staticmethod
-    def bias_toward_termination(probs: List[float], alphabet: List[str], 
-                              current_length: int, target_length: int, 
-                              termination_bias: float = 2.0) -> List[float]:
-        """
-        Bias probabilities toward termination when approaching target length.
-        
-        Args:
-            probs: Original probability distribution
-            alphabet: Character alphabet  
-            current_length: Current word length
-            target_length: Target word length
-            termination_bias: Multiplier for termination probability
-            
-        Returns:
-            Modified probability distribution with termination bias
-        """
-        if current_length < target_length:
-            return probs.copy()
-            
-        modified_probs = probs.copy()
-        
-        # Find termination character index
-        try:
-            term_idx = alphabet.index("#")
-            modified_probs[term_idx] *= termination_bias
-            
-            # Renormalize
-            total = sum(modified_probs)
-            if total > 0:
-                modified_probs = [p / total for p in modified_probs]
-                
-        except ValueError:
-            pass  # No termination character found
-            
-        return modified_probs
+                return False
 
-
-class ConstraintHandlers:
-    """Modular handlers for different constraint types"""
-    
-    @staticmethod
-    def handle_starts_with(starts_with: str, order: int) -> str:
-        """
-        Initialize word with starts_with constraint.
-        
-        Args:
-            starts_with: Required prefix
-            order: Markov model order
-            
-        Returns:
-            Initial word state with prefix applied
-        """
-        if not starts_with:
-            return "#" * order
-            
-        if len(starts_with) >= order:
-            return starts_with
-        else:
-            padding_needed = order - len(starts_with)
-            return "#" * padding_needed + starts_with
-    
-    @staticmethod
-    def handle_ends_with(word: str, ends_with: str, current_length: int,
-                        target_length: int) -> Tuple[str, bool]:
-        """
-        Handle ends_with constraint by checking if we should apply ending.
-        
-        Args:
-            word: Current word being generated
-            ends_with: Required suffix
-            current_length: Current word length (excluding padding)
-            target_length: Target total length
-            
-        Returns:
-            Tuple of (modified_word, should_terminate)
-        """
-        if not ends_with:
-            return word, False
-            
-        # Check if we're at or near the right length to apply ending
-        body_length = target_length - len(ends_with)
-        
-        if current_length >= body_length:
-            # Apply the ending
-            clean_word = word.replace("#", "")
-            # Trim to exact body length if needed
-            if len(clean_word) > body_length:
-                clean_word = clean_word[:body_length]
-            elif len(clean_word) < body_length:
-                # If we're short, pad with a common character or return as-is
-                pass
-                
-            return clean_word + ends_with, True
-                
-        return word, False
-    
-    @staticmethod
-    def validate_constraints(constraints: GenerationConstraints) -> bool:
-        """
-        Validate that constraints are feasible.
-        
-        Args:
-            constraints: Constraint configuration
-            
-        Returns:
-            True if constraints are feasible, False otherwise
-        """
-        # Check basic length constraints
-        if constraints.min_length > constraints.max_length:
-            return False
-            
-        # Check prefix/suffix length constraints
-        required_length = len(constraints.starts_with) + len(constraints.ends_with)
-        if required_length > constraints.max_length:
-            return False
-            
-        # Only reject if required length exceeds max_length
-        # We can always generate words >= required_length by adding middle content
-            
         return True
 
 
@@ -209,219 +120,220 @@ class ConstraintSampler:
     """
     Main constraint-aware sampler that coordinates all constraint handling.
     """
-    
-    def __init__(self, markov_model: MarkovModel):
-        """Initialize with a Markov model"""
-        self.model = markov_model
-        self.prob_modifier = ProbabilityModifier()
-        self.handlers = ConstraintHandlers()
-    
+
+    def __init__(self, markov_models):
+        """Initialize with a list of Markov models (highest order first) for
+        backoff, or a single model."""
+        if isinstance(markov_models, MarkovModel):
+            markov_models = [markov_models]
+        self.models = markov_models
+        self.model = markov_models[0]  # Primary (highest-order) model
+        self.alphabet = self.model.alphabet
+        self.char_index = {char: i for i, char in enumerate(self.alphabet)}
+        self.term_index = self.char_index["#"]
+
     def generate_constrained_name(self, constraints: GenerationConstraints) -> Optional[str]:
         """
         Generate a name with integrated constraint handling.
-        
-        Args:
-            constraints: All generation constraints
-            
-        Returns:
-            Generated name meeting constraints, or None if impossible
+
+        Returns a name meeting all constraints, or None for this attempt
+        (callers retry; None is also returned immediately for infeasible
+        constraint combinations).
         """
-        if not self.handlers.validate_constraints(constraints):
+        if not constraints.is_feasible():
             return None
-            
-        # 1. Initialize with starts_with constraint
-        word = self.handlers.handle_starts_with(constraints.starts_with, self.model.order)
-        
-        # 2. Calculate target length range
-        target_length = self._calculate_target_length(constraints)
-        if target_length is None:
-            return None
-            
-        # 3. Generate middle section with constraint awareness
-        word = self._generate_middle_section(word, constraints, target_length)
-        
-        # 4. Handle ends_with constraint
-        if constraints.ends_with:
-            word, terminated = self.handlers.handle_ends_with(
-                word, constraints.ends_with, 
-                len(word.replace("#", "")), target_length
-            )
-            if terminated:
-                final_word = word
-            else:
-                # Force termination with ending if we didn't naturally terminate
-                clean_word = word.replace("#", "")
-                body_length = target_length - len(constraints.ends_with)
-                if len(clean_word) >= body_length:
-                    if len(clean_word) > body_length:
-                        clean_word = clean_word[:body_length]
-                    final_word = clean_word + constraints.ends_with
-                else:
-                    final_word = word.replace("#", "") + constraints.ends_with
-        else:
-            # 5. Standard termination if no ends_with
-            final_word = word.replace("#", "")
-        
-        # 6. Apply includes constraint as posterior filter with AND/OR logic
-        if constraints.includes and not self._meets_includes_constraint(final_word, constraints.includes):
-            return None
-            
-        return final_word if self._meets_length_constraints(final_word, constraints) else None
-    
-    def _calculate_target_length(self, constraints: GenerationConstraints) -> Optional[int]:
-        """Calculate a valid target length given constraints"""
-        min_body = constraints.min_length - len(constraints.starts_with) - len(constraints.ends_with)
-        max_body = constraints.max_length - len(constraints.starts_with) - len(constraints.ends_with)
-        
-        min_body = max(0, min_body)
-        max_body = max(0, max_body)
-        
-        if min_body > max_body:
-            return None
-            
-        # For ends_with, we need precise length control
-        if constraints.ends_with:
-            body_length = random.randint(min_body, max_body)
-            return len(constraints.starts_with) + body_length + len(constraints.ends_with)
-        else:
-            return random.randint(constraints.min_length, constraints.max_length)
-    
-    def _generate_middle_section(self, word: str, constraints: GenerationConstraints, 
-                               target_length: int) -> str:
-        """Generate the middle section of the word with constraint awareness"""
-        max_iterations = 1000
-        iteration = 0
-        
-        while iteration < max_iterations:
-            current_clean_length = len(word.replace("#", ""))
-            
-            # Check if we should terminate based on length and ends_with
-            if constraints.ends_with:
-                body_target = target_length - len(constraints.ends_with)
-                if current_clean_length >= body_target:
+
+        suffix = constraints.ends_with
+        excludes = constraints.excludes_tokens()
+        guide_tokens = self._pick_guide_tokens(constraints, excludes)
+
+        # Seed sampling state with the required prefix after full padding.
+        word = "#" * self.model.order + constraints.starts_with
+        clean = constraints.starts_with
+
+        # The "body" is everything except the spliced-on suffix.
+        body_max = constraints.max_length - len(suffix)
+        body_min = max(constraints.min_length - len(suffix), len(clean))
+        target = random.randint(body_min, body_max)
+
+        final = None
+        while True:
+            clean_length = len(clean)
+
+            if suffix:
+                # Try splicing the suffix at every length from the sampled
+                # target up to the maximum, instead of rejecting outright.
+                if clean_length >= target and self._can_splice(word, clean, suffix, excludes):
+                    final = clean + suffix
                     break
-            elif current_clean_length >= target_length:
-                # For non-ends_with constraints, allow natural termination
+                if clean_length >= body_max:
+                    break  # no plausible splice point found in the window
+            elif clean_length >= body_max:
+                # Hard length cap: only accept if the model could plausibly
+                # end a word here (avoids chopped-off endings).
+                if self._is_plausible(word, "#", strict=True):
+                    final = clean
                 break
-            
-            # Get context for next character prediction
-            context = word[-self.model.order:]
-            
-            # Get base probabilities with proper backoff
-            base_probs = None
-            original_context = context
-            
-            # Try progressively shorter contexts until we find one that works
-            while base_probs is None and len(context) > 0:
-                base_probs = self.model.chains.get(context)
-                if base_probs is None and len(context) > 1:
-                    context = context[1:]
-                else:
-                    break
-                    
-            # If we still can't find anything, try single character contexts
-            if base_probs is None and len(original_context) > 0:
-                for i in range(len(original_context)):
-                    single_char_context = original_context[i]
-                    base_probs = self.model.chains.get(single_char_context)
-                    if base_probs is not None:
-                        break
-                        
-            if base_probs is None:
+
+            allow_termination = not suffix and clean_length >= constraints.min_length
+            termination_bias = (TERMINATION_BIAS ** (clean_length - target + 1)
+                                if not suffix and clean_length >= target else 1.0)
+            capacity = body_max - clean_length
+
+            probs = self._constrained_probs(word, clean, allow_termination,
+                                            termination_bias, guide_tokens,
+                                            capacity, excludes)
+            if probs is None:
+                break  # dead end at every model order
+
+            char = self._sample_from_probabilities(probs)
+            if char == "#":
+                final = clean  # only reachable when termination was allowed
                 break
-                
-            # Apply constraint modifications
-            modified_probs = self._apply_constraint_modifications(
-                base_probs, word, constraints, current_clean_length, target_length
-            )
-            
-            # Check if all probabilities are zero (no valid transitions)
-            if sum(modified_probs) <= 0:
-                break
-            
-            # Sample next character
-            next_char = self._sample_from_probabilities(modified_probs)
-            if next_char is None:
-                break
-            elif next_char == "#":
-                # Only break on termination if we're not forcing an ending
-                if not constraints.ends_with or current_clean_length >= target_length - len(constraints.ends_with):
-                    break
-            else:
-                word += next_char
-            
-            iteration += 1
-        
-        return word
-    
-    def _apply_constraint_modifications(self, base_probs: List[float], word: str,
-                                     constraints: GenerationConstraints,
-                                     current_length: int, target_length: int) -> List[float]:
-        """Apply all relevant constraint modifications to probabilities"""
-        modified_probs = base_probs.copy()
-        
-        # Apply excludes constraint
-        if constraints.excludes:
-            modified_probs = self.prob_modifier.mask_forbidden_transitions(
-                modified_probs, self.model.alphabet, word, constraints.excludes
-            )
-        
-        # Apply length-based termination bias
-        if not constraints.ends_with:  # Don't bias termination if we have specific ending
-            modified_probs = self.prob_modifier.bias_toward_termination(
-                modified_probs, self.model.alphabet, current_length, target_length
-            )
-        
-        return modified_probs
-    
+            word += char
+            clean += char
+
+        if final is None:
+            return None
+        return final if self._validate(final, constraints, excludes) else None
+
+    # ------------------------------------------------------------------
+    # Sampling internals
+    # ------------------------------------------------------------------
+
+    def _pick_guide_tokens(self, constraints: GenerationConstraints,
+                           excludes: List[str]) -> List[str]:
+        """Pick one satisfiable OR-group to guide sampling toward. Callers
+        retry per attempt, so random choice covers all groups over time."""
+        groups = [group for group in constraints.includes_groups()
+                  if all(not any(t in token for t in excludes) for token in group)]
+        return random.choice(groups) if groups else []
+
+    def _constrained_probs(self, word: str, clean: str, allow_termination: bool,
+                           termination_bias: float, guide_tokens: List[str],
+                           capacity: int, excludes: List[str]) -> Optional[List[float]]:
+        """Next-character distribution with all constraint masks applied.
+
+        Backs off to lower-order models not only when a context is unseen,
+        but also when constraint masking zeroes out every transition at the
+        current order — only giving up when every order is a dead end.
+        """
+        for model in self.models:
+            chain = model.chains.get(word[-model.order:])
+            if chain is None:
+                continue
+
+            probs = chain.copy()
+
+            # Mask characters that would complete a forbidden substring.
+            if excludes:
+                for i, char in enumerate(self.alphabet):
+                    if i == self.term_index or probs[i] <= 0:
+                        continue
+                    candidate = clean + char
+                    if any(candidate.endswith(token) for token in excludes):
+                        probs[i] = 0.0
+
+            if not allow_termination:
+                probs[self.term_index] = 0.0
+            elif termination_bias != 1.0:
+                probs[self.term_index] *= termination_bias
+
+            # Boost transitions that progress toward an unmet includes token.
+            for token in guide_tokens:
+                if token in clean:
+                    continue
+                overlap = self._suffix_prefix_overlap(clean, token)
+                if len(token) - overlap > capacity:
+                    continue  # can't fit anymore this attempt
+                index = self.char_index.get(token[overlap])
+                if index is not None and probs[index] > 0:
+                    probs[index] *= INCLUDES_BOOST
+
+            if sum(probs) > 0:
+                return probs
+            # All transitions masked at this order — back off and retry.
+
+        return None
+
+    @staticmethod
+    def _suffix_prefix_overlap(word: str, token: str) -> int:
+        """Length of the longest suffix of `word` that is a prefix of `token`."""
+        for k in range(min(len(word), len(token) - 1), 0, -1):
+            if word.endswith(token[:k]):
+                return k
+        return 0
+
+    def _is_plausible(self, word: str, char: str, strict: bool = False) -> bool:
+        """Whether `char` is a transition the model could have produced after
+        `word`.
+
+        Lenient (default): backs off past zero-probability higher-order
+        contexts — plausible if *any* order allows the transition. Strict:
+        the highest-order model that knows this context decides — used for
+        suffix junctions, where growing the body and retrying the splice
+        makes rejection cheap and quality matters most.
+        """
+        index = self.char_index.get(char)
+        if index is None:
+            return False
+        for model in self.models:
+            chain = model.chains.get(word[-model.order:])
+            if chain is None:
+                continue
+            if chain[index] > 0:
+                return True
+            if strict:
+                return False
+        return False
+
+    def _can_splice(self, word: str, clean: str, suffix: str,
+                    excludes: List[str]) -> bool:
+        """Check that splicing `suffix` onto the current state yields a
+        junction and ending the model could actually have produced, and
+        doesn't introduce a forbidden substring."""
+        candidate = clean + suffix
+        if any(token in candidate for token in excludes):
+            return False
+        state = word
+        for char in suffix:
+            if not self._is_plausible(state, char, strict=True):
+                return False
+            state += char
+        return self._is_plausible(state, "#", strict=True)
+
     def _sample_from_probabilities(self, probs: List[float]) -> Optional[str]:
         """Sample a character from probability distribution"""
         total = sum(probs)
         if total <= 0:
             return None
-            
+
         rand = random.random() * total
         accumulator = 0.0
-        
+
         for i, prob in enumerate(probs):
             accumulator += prob
             if rand < accumulator:
-                return self.model.alphabet[i]
-                
-        return None
-    
-    def _meets_includes_constraint(self, word: str, includes_pattern: str) -> bool:
-        """
-        Check if word meets includes constraint with AND/OR logic.
-        
-        Format:
-        - 'x,a' = must contain BOTH x AND a (comma = AND)
-        - 'x;a' = must contain EITHER x OR a (semicolon = OR)  
-        - 'x,a;b,c' = must contain (x AND a) OR (b AND c)
-        
-        Args:
-            word: Generated word to check
-            includes_pattern: Pattern string with AND/OR logic
-            
-        Returns:
-            True if word meets the includes constraint
-        """
-        if not includes_pattern.strip():
-            return True
-            
-        # Split by semicolon for OR groups
-        or_groups = [group.strip() for group in includes_pattern.split(';')]
-        
-        for group in or_groups:
-            # Split by comma for AND conditions within each group
-            and_conditions = [condition.strip() for condition in group.split(',') if condition.strip()]
-            
-            # Check if all AND conditions in this group are met
-            if and_conditions and all(condition in word for condition in and_conditions):
-                return True
-        
-        return False
-    
-    def _meets_length_constraints(self, word: str, constraints: GenerationConstraints) -> bool:
-        """Check if word meets length constraints"""
-        return constraints.min_length <= len(word) <= constraints.max_length
+                return self.alphabet[i]
+
+        return self.alphabet[-1]
+
+    # ------------------------------------------------------------------
+    # Posterior validation
+    # ------------------------------------------------------------------
+
+    def _validate(self, word: str, constraints: GenerationConstraints,
+                  excludes: List[str]) -> bool:
+        """Single authoritative check that the assembled word meets every
+        constraint (integrated sampling makes passing likely, not certain)."""
+        if not (constraints.min_length <= len(word) <= constraints.max_length):
+            return False
+        if constraints.starts_with and not word.startswith(constraints.starts_with):
+            return False
+        if constraints.ends_with and not word.endswith(constraints.ends_with):
+            return False
+        if any(token in word for token in excludes):
+            return False
+        if constraints.includes and not meets_includes_constraint(word, constraints.includes):
+            return False
+        return True

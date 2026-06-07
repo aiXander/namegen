@@ -1,4 +1,3 @@
-import random
 from typing import List, Optional, Tuple
 from .markov_model import MarkovModel
 from .constraint_sampler import ConstraintSampler, GenerationConstraints
@@ -9,7 +8,7 @@ class Generator:
     def __init__(self, data: List[str], order: int, temperature: float, backoff: bool = False):
         assert data is not None
         assert order >= 1
-        assert temperature > 0
+        assert temperature >= 0
         
         self.order = order
         self.temperature = temperature
@@ -39,10 +38,10 @@ class Generator:
             # Create single model of specified order
             self.models.append(MarkovModel(data.copy(), order, temperature, domain))
         
-        # Initialize constraint sampler with primary model
-        self.constraint_sampler = ConstraintSampler(self.models[0])
-        # Initialize multi-component sampler with primary model
-        self.multi_component_sampler = MultiComponentSampler(self.models[0])
+        # Samplers get the full model list (highest order first) so they can
+        # back off to lower-order models when a context is unseen
+        self.constraint_sampler = ConstraintSampler(self.models)
+        self.multi_component_sampler = MultiComponentSampler(self.models)
     
     def generate(self) -> str:
         """Generate a word"""
@@ -57,22 +56,23 @@ class Generator:
         return word
     
     def _get_letter(self, word: str) -> Optional[str]:
-        """Generate next letter in word"""
+        """Generate next letter in word, backing off to lower-order models
+        when the current context was never observed.
+
+        Each model is queried with the last `model.order` characters (its keys
+        are exactly that long). A "#" result is a valid end-of-word signal and
+        is returned as-is — treating it as a failure would bias against word
+        endings.
+        """
         assert word is not None
         assert len(word) > 0
-        
-        letter = None
-        context = word[-self.order:]
-        
+
         for model in self.models:
-            letter = model.generate(context)
-            if letter is None or letter == "#":
-                # Remove first character from context for next model
-                context = context[1:] if len(context) > 1 else ""
-            else:
-                break
-        
-        return letter
+            letter = model.generate(word[-model.order:])
+            if letter is not None:
+                return letter
+
+        return None
     
     def generate_with_constraints(self, min_length: int = 1, max_length: int = 20,
                                 starts_with: str = "", ends_with: str = "",

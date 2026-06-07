@@ -3,21 +3,20 @@
 import asyncio
 from typing import List, Dict, Any, Tuple
 import json
-import re
-from ai.llm import LLMWrapper
+from ai.llm import LLMWrapper, DEFAULT_MODEL
 DEFAULT_SCORE = 0.0
 
 class LLMScorer:
     """
-    LLM-based name scoring system using OpenAI client with parallel batch processing
+    LLM-based name scoring system using OpenRouter with parallel batch processing
     """
-    
-    def __init__(self, model: str = "gpt-4o-mini", max_chunk_size: int = 10, cache_dir: str = ".cache"):
+
+    def __init__(self, model: str = DEFAULT_MODEL, max_chunk_size: int = 10, cache_dir: str = ".cache"):
         """
         Initialize the LLM scorer
-        
+
         Args:
-            model: LLM model name (compatible with OpenAI)
+            model: OpenRouter model name (e.g. "google/gemini-3.1-flash-lite-preview")
             max_chunk_size: Maximum number of names to score in one API call
             cache_dir: Directory for caching responses
         """
@@ -38,8 +37,9 @@ class LLMScorer:
             description: Description of what the names are for
             scored_examples: List of (name, score) tuples as examples
             instructions: Instructions for the LLM
-            progress_callback: Optional callback function for progress updates
-            
+            progress_callback: Optional (done_chunks, total_chunks) hook,
+                called live as each LLM chunk completes
+
         Returns:
             Tuple of (List of (name, score) tuples, total cost in USD)
         """
@@ -67,8 +67,7 @@ class LLMScorer:
         """Async implementation of score_names with parallel batch processing"""
         # Split names into chunks
         chunks = self._chunk_names(names)
-        total_chunks = len(chunks)
-        
+
         # Build prompts for all chunks
         prompts = []
         cache_keys = []
@@ -101,15 +100,13 @@ class LLMScorer:
                 batch_size=10,  # Run up to batch_size API calls concurrently
                 max_retries=3,
                 reasoning_effort="low",
-                verbosity=1
+                verbosity=1,
+                progress_callback=progress_callback
             )
-            
+
             # Parse results and combine scores
             all_scores = []
             for i, (chunk, result) in enumerate(zip(chunks, results)):
-                if progress_callback:
-                    progress_callback((i + 1) / total_chunks)
-                
                 if isinstance(result, Exception):
                     print(f"Error scoring chunk {i+1}: {str(result)}")
                     chunk_scores = [(name, DEFAULT_SCORE) for name in chunk]
@@ -197,12 +194,5 @@ class LLMScorer:
     
     @staticmethod
     def get_available_models() -> List[str]:
-        """Get list of available LLM models"""
-        return [
-            "gpt-4o-mini",
-            "gpt-4.1", 
-            "gpt-4o",
-            "gpt-5",
-            "gpt-5-mini",
-            "gpt-5-nano"
-        ]
+        """Minimal fallback model list — the real list lives in config.yaml (`llm.available_models`)."""
+        return [DEFAULT_MODEL]

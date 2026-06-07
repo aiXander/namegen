@@ -2,12 +2,21 @@ import axios from 'axios';
 
 const API_BASE_URL = 'http://localhost:5001/api';
 
+export interface DatasetHealth {
+  score: number;
+  branching_factor: number;
+  memorization_rate: number;
+  unique_contexts: number;
+  unique_words: number;
+}
+
 export interface WordList {
   filename: string;
   display_name: string;
   rating: number;
   selected: boolean;
   word_count: number;
+  health: DatasetHealth | null;
 }
 
 export interface WordListContent {
@@ -37,12 +46,20 @@ export interface Config {
     ends_with: string;
     includes: string;
     excludes: string;
+    max_time_per_name?: number;
+    regex_pattern?: string;
+    components?: string[];
+    component_order?: number[];
+    component_separation?: [number, number];
   };
   llm?: {
     model?: string;
     max_chunk_size?: number;
     default_instructions?: string;
     description?: string;
+    keywords?: string;
+    embedding_model?: string;
+    min_similarity?: number;
   };
   ai_settings?: {
     max_names?: number;
@@ -58,11 +75,23 @@ export interface GenerationResult {
 
 export interface ScoredName {
   name: string;
-  score: number;
+  score?: number;
+  similarity?: number;
+}
+
+export interface PrefilterInfo {
+  keywords: string[];
+  total: number;
+  kept: number;
+  dropped: number;
+  min_similarity?: number;
+  embedding_model: string;
+  cost: number;
 }
 
 export interface AIScoringResult {
   scored_names: ScoredName[];
+  prefilter: PrefilterInfo | null;
   total_cost: number;
 }
 
@@ -72,6 +101,23 @@ export interface AIScoringRequest {
   instructions: string;
   model: string;
   max_chunk_size: number;
+  keywords?: string;
+  prefilter_keep?: number;
+  embedding_model?: string;
+  min_similarity?: number;
+}
+
+export interface EmbedRankRequest {
+  names: string[];
+  keywords: string;
+  embedding_model?: string;
+}
+
+export interface EmbedRankResult {
+  ranked: { name: string; similarity: number }[];
+  total: number;
+  embedding_model: string;
+  cost: number;
 }
 
 export interface AIModelsResponse {
@@ -147,6 +193,78 @@ class ApiService {
   async scoreNamesWithAI(request: AIScoringRequest): Promise<AIScoringResult> {
     const response = await axios.post(`${this.baseURL}/ai/score`, request);
     return response.data;
+  }
+
+  async embedRankNames(request: EmbedRankRequest): Promise<EmbedRankResult> {
+    const response = await axios.post(`${this.baseURL}/ai/embed-rank`, request);
+    return response.data;
+  }
+
+  /** POST to an SSE endpoint; forwards intermediate events to onEvent,
+   *  resolves with the `complete` event, throws on `error` events. */
+  private async streamSSE(
+    path: string,
+    body: any,
+    onEvent: (event: any) => void
+  ): Promise<any> {
+    const response = await fetch(`${this.baseURL}${path}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    if (!response.ok || !response.body) {
+      throw new Error(`Request failed (HTTP ${response.status})`);
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    // Buffer partial chunks so SSE events split across reads aren't dropped
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        const event = JSON.parse(line.slice(6));
+        if (event.type === 'complete') {
+          return event;
+        } else if (event.type === 'error') {
+          throw new Error(event.message || 'Request failed');
+        } else {
+          onEvent(event);
+        }
+      }
+    }
+    throw new Error('Stream ended without a result');
+  }
+
+  /** Streaming variant of embedRankNames: reports embedding progress via
+   *  onProgress(done, total) as batches complete, resolves with the result. */
+  async embedRankNamesStream(
+    request: EmbedRankRequest,
+    onProgress: (done: number, total: number) => void
+  ): Promise<EmbedRankResult> {
+    return this.streamSSE('/ai/embed-rank-stream', request, (event) => {
+      if (event.type === 'progress') onProgress(event.done, event.total);
+    });
+  }
+
+  /** Streaming variant of scoreNamesWithAI: reports two-phase progress —
+   *  'embedding' (prefilter texts) then 'scoring' (completed LLM chunks). */
+  async scoreNamesWithAIStream(
+    request: AIScoringRequest,
+    onProgress: (phase: 'embedding' | 'scoring', done: number, total: number) => void
+  ): Promise<AIScoringResult> {
+    return this.streamSSE('/ai/score-stream', request, (event) => {
+      if (event.type === 'embed_progress') onProgress('embedding', event.done, event.total);
+      else if (event.type === 'score_progress') onProgress('scoring', event.done, event.total);
+    });
   }
 
   async getAIModels(): Promise<AIModelsResponse> {
