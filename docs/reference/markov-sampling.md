@@ -120,6 +120,29 @@ every mode. `MarkovModel` stores observations as weighted counts
 the old `Counter`-based model (verified 2026-10). The API's generator cache key
 includes the weighting mode, and the ratings when weighting by rating.
 
+## Extra training words: lexicon + breeding
+
+Two word sets that aren't word lists ride on top of the source weighting
+(`extra_sources()` / `mix_extra_words()` in `markov_namegen.py`, applied in
+`MarkovNameGenerator._load_training_data`, so CLI and API agree):
+
+- `training_data.lexicon` — real words evoking the brief (see
+  [ai-judging.md](ai-judging.md)), at `lexicon_share` (default 0.5).
+- `training_data.seeds` — earlier winners, only when `training_data.breed`
+  is on, at `seed_share` (default 0.2). Multi-word seeds are split and words
+  under 3 letters dropped (`SEED_MIN_LENGTH`).
+
+Each set holds exactly its share of the total training mass; the word lists
+(already weighted by `weighting`) keep the rest, and the extras are scaled
+down if they'd exceed 90% (`MAX_EXTRA_SHARE`) so the lists always keep a say.
+Both sets are ordinary training words for the novelty filters (exact copies
+excluded, the From column shows provenance like `lokahi +2`). Seeds add one
+rule: anything within edit distance < 2 (`MIN_SEED_DISTANCE`) of a seed is
+rejected as a re-spelling of a name the user already saw (counted as
+`too_similar`; ~6k of 27k attempts on a 38-seed pool, still 3000 names in
+~2s). The API's generator cache key includes all five extra fields. Why
+these defaults: measured in ai-judging.md.
+
 ## Naturalness (`NameGenerator.naturalness`)
 
 A free per-name fluency score (0–100) shown in the GUI's Natural column:

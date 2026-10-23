@@ -8,6 +8,12 @@ chunking, and a name's score is the mean over judges. Two cheap, fast judges
 (the defaults) already halve the score variance at a fraction of a cent per
 hundred names.
 
+Why a quick screen first: generating thousands of names is free, judging them
+properly is not. A score-only pass by the same panel, 50 names per call, costs
+~1/6 of a full verdict and predicts it well: on one brief (2026-10) keeping the
+top sixth by screen score kept 75% of the names the panel later rated >= 5
+(the embedding "vibe" prefilter it replaced kept 30%, barely above chance).
+
 Why a final round: absolute scores are poorly calibrated at the top end, but
 LLMs are good at *comparing*. The best few dozen names go to one (stronger)
 model in a single call that ranks them against each other and pitches each.
@@ -34,6 +40,9 @@ CRITERIA = ("sound", "fit", "distinct")
 # Requests in flight per judge model. These judges are cheap, fast endpoints
 # built for burst traffic; the sliding window keeps a slow call from stalling.
 DEFAULT_CONCURRENCY = 24
+# Names per quick-screen call: output is a bare number per name, so large
+# chunks keep the repeated brief cheap without hurting recall.
+SCREEN_CHUNK_SIZE = 50
 # User star ratings shown to the judges as taste examples.
 MAX_EXAMPLES = 60
 
@@ -55,6 +64,11 @@ For each name also give:
 
 Reply with JSON only, covering every candidate exactly once, spelled exactly as given:
 {"names": [{"name": "...", "sound": 0, "fit": 0, "distinct": 0, "score": 0, "note": "...", "flag": ""}]}"""
+
+SCREEN_SYSTEM_PROMPT = """You are screening raw candidates for a naming jury. The candidates were sampled letter by letter from Markov chains; most are noise. Quickly rate each one 0-10 as a name for the brief (sound, fit, memorability). A typical candidate is 2-4; give 6+ only to names worth the jury's time.
+
+Reply with JSON only, every candidate exactly once, spelled exactly as given:
+{"scores": {"name": 0}}"""
 
 FINAL_SYSTEM_PROMPT = """You chair a naming jury. The shortlist below already survived a first round in which hundreds of statistically generated candidates were scored. Now compare them head to head.
 
@@ -114,11 +128,14 @@ def _as_score(value: Any) -> Optional[float]:
 def _entries(result: Any) -> Dict[str, Dict[str, Any]]:
     """Normalise a judge response into {lowercased name: entry dict}.
 
-    Accepts the requested {"names": [...]} shape, a bare list, or the looser
-    {name: score} / {name: {...}} dicts some models fall back to.
+    Accepts the requested {"names": [...]} shape, the screen's
+    {"scores": {name: score}}, a bare list, or the looser {name: score} /
+    {name: {...}} dicts some models fall back to.
     """
     if isinstance(result, dict) and isinstance(result.get("names"), list):
         result = result["names"]
+    elif isinstance(result, dict) and isinstance(result.get("scores"), dict):
+        result = result["scores"]
     entries: Dict[str, Dict[str, Any]] = {}
     if isinstance(result, list):
         for item in result:
@@ -166,20 +183,36 @@ class NameJudge:
             return [], 0.0
         wrapper = self._wrapper("name_judge")
         start_cost = wrapper.cost_tracker.get_total_cost()
-        per_model = asyncio.run(self._judge_all(names, brief, progress_callback))
+        per_model = asyncio.run(self._judge_all(names, brief, JUDGE_SYSTEM_PROMPT, self.chunk_size,
+                                                progress_callback))
         cost = wrapper.cost_tracker.get_total_cost() - start_cost
         return [self._aggregate(name, per_model) for name in names], cost
 
-    def _chunks(self, names: List[str], model: str) -> List[List[str]]:
+    def screen(self, names: List[str], brief: str,
+               progress_callback: Optional[ProgressCallback] = None) -> Tuple[Dict[str, Optional[float]], float]:
+        """Quick score-only pass by every judge, to pick which names get a
+        full verdict. Returns ({name: mean 0-10 score, None if no judge
+        returned it}, cost in USD)."""
+        if not names:
+            return {}, 0.0
+        wrapper = self._wrapper("name_screen")
+        start_cost = wrapper.cost_tracker.get_total_cost()
+        per_model = asyncio.run(self._judge_all(names, brief, SCREEN_SYSTEM_PROMPT, SCREEN_CHUNK_SIZE,
+                                                progress_callback))
+        cost = wrapper.cost_tracker.get_total_cost() - start_cost
+        return {name: self._aggregate(name, per_model)["score"] for name in names}, cost
+
+    @staticmethod
+    def _chunks(names: List[str], model: str, size: int) -> List[List[str]]:
         """Shuffle per judge (deterministically, so re-runs hit the cache) so
         chunk-neighbour effects average out across the panel."""
         order = list(names)
         random.Random(_cache_key(model)).shuffle(order)
-        return [order[i:i + self.chunk_size] for i in range(0, len(order), self.chunk_size)]
+        return [order[i:i + size] for i in range(0, len(order), size)]
 
-    async def _judge_all(self, names: List[str], brief: str,
+    async def _judge_all(self, names: List[str], brief: str, system_prompt: str, chunk_size: int,
                          progress_callback: Optional[ProgressCallback]) -> Dict[str, Dict[str, Dict[str, Any]]]:
-        chunked = {model: self._chunks(names, model) for model in self.models}
+        chunked = {model: self._chunks(names, model, chunk_size) for model in self.models}
         done = {model: 0 for model in self.models}
         total = sum(len(chunks) for chunks in chunked.values())
 
@@ -191,31 +224,34 @@ class NameJudge:
             return callback
 
         results = await asyncio.gather(*(
-            self._judge_with_model(model, chunked[model], brief, report(model)) for model in self.models))
+            self._judge_with_model(model, chunked[model], brief, system_prompt, report(model))
+            for model in self.models))
         return dict(zip(self.models, results))
 
-    async def _judge_with_model(self, model: str, chunks: List[List[str]], brief: str,
+    async def _judge_with_model(self, model: str, chunks: List[List[str]], brief: str, system_prompt: str,
                                 progress_callback: ProgressCallback) -> Dict[str, Dict[str, Any]]:
         """{name: entry} from one judge; names it skipped get one retry pass."""
         verdicts: Dict[str, Dict[str, Any]] = {}
-        missing = await self._score_chunks(model, chunks, brief, verdicts, progress_callback)
+        missing = await self._score_chunks(model, chunks, brief, system_prompt, verdicts, progress_callback)
         if missing:
             print(f"{model}: retrying {len(missing)} names it skipped or failed")
-            retry_chunks = [missing[i:i + self.chunk_size] for i in range(0, len(missing), self.chunk_size)]
-            still_missing = await self._score_chunks(model, retry_chunks, brief, verdicts, None, retry=True)
+            size = len(chunks[0])
+            retry_chunks = [missing[i:i + size] for i in range(0, len(missing), size)]
+            still_missing = await self._score_chunks(model, retry_chunks, brief, system_prompt, verdicts, None,
+                                                     retry=True)
             if still_missing:
                 print(f"{model}: no verdict for {len(still_missing)} names: {still_missing[:10]}")
         return verdicts
 
-    async def _score_chunks(self, model: str, chunks: List[List[str]], brief: str,
+    async def _score_chunks(self, model: str, chunks: List[List[str]], brief: str, system_prompt: str,
                             verdicts: Dict[str, Dict[str, Any]],
                             progress_callback: Optional[ProgressCallback], retry: bool = False) -> List[str]:
         prompts = [f"{brief}\n\nCANDIDATES ({len(chunk)}):\n" + "\n".join(chunk) for chunk in chunks]
         # A retry must not be served the cached (bad) response.
-        keys = [_cache_key(model, JUDGE_SYSTEM_PROMPT, prompt, "retry" if retry else "") for prompt in prompts]
+        keys = [_cache_key(model, system_prompt, prompt, "retry" if retry else "") for prompt in prompts]
         results = await self._wrapper("name_judge").batch_json_complete(
             prompts=prompts, model=model, cache_keys=keys, batch_size=self.concurrency,
-            system_prompt=JUDGE_SYSTEM_PROMPT, progress_callback=progress_callback)
+            system_prompt=system_prompt, progress_callback=progress_callback)
 
         missing: List[str] = []
         for chunk, result in zip(chunks, results):

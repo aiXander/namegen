@@ -15,9 +15,11 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from markov.markov_model import MarkovModel
 from markov.name_generator import NameGenerator
-from markov_namegen import WORD_LISTS_DIR, load_word_list, source_weights
+from markov_namegen import (WORD_LISTS_DIR, as_words, extra_sources, load_word_list, mix_extra_words,
+                            source_weights)
 from ai import judge as judge_module
 from ai.judge import NameJudge, select_examples
+from ai.lexicon import parse_lexicon
 
 failures = []
 
@@ -54,6 +56,29 @@ def test_source_weights():
     check("weighted training reshapes transition probabilities",
           natural.probability("a", "q") < 0.02 and abs(balanced.probability("a", "q") - 0.5) < 1e-9,
           (natural.probability("a", "q"), balanced.probability("a", "q")))
+
+
+def test_extra_words():
+    print("Lexicon + breeding mix:")
+    lexicon = [{"word": "koru"}, {"word": "noos"}, "koru"]
+    check("lexicon entries and seed names become unique single words",
+          as_words(lexicon) == ["koru", "noos"] and as_words(["mind of us", "co x"], 3) == ["mind"],
+          (as_words(lexicon), as_words(["mind of us", "co x"], 3)))
+    config = {"lexicon": lexicon, "lexicon_share": 0.5, "seeds": ["flokahi"], "seed_share": 0.2}
+    check("seeds only count when breeding is on", [s for _, s in extra_sources(config)] == [0.5])
+    extras = extra_sources({**config, "breed": True})
+    words, weights = mix_extra_words(["aa", "bb", "cc"], [1.0, 2.0, 1.0], extras)
+    mass = {w: wt for w, wt in zip(words, weights)}
+    total = sum(weights)
+    check("each extra set holds exactly its share of the training mass",
+          abs((mass["koru"] + mass["noos"]) / total - 0.5) < 1e-9 and abs(mass["flokahi"] / total - 0.2) < 1e-9,
+          mass)
+    capped = extra_sources({"lexicon": ["ab"], "lexicon_share": 0.8, "seeds": ["cde"], "seed_share": 0.4,
+                            "breed": True})
+    check("the word lists always keep at least 10%", abs(sum(s for _, s in capped) - 0.9) < 1e-9, capped)
+    check("lexicon replies are normalised to plain lowercase a-z",
+          [e["word"] for e in parse_lexicon({"words": [{"word": "Kōru"}, {"word": "two words"}, "noos",
+                                                        {"word": "noos"}]})] == ["koru", "noos"])
 
 
 def test_naturalness():
@@ -110,6 +135,26 @@ def test_judge_panel():
           by_name["mivo"]["flag"] == "brand" and by_name["mivo"]["note"] == "note mivo", by_name["mivo"])
 
 
+def test_screen():
+    print("Quick screen (stubbed LLM):")
+    names = [f"n{i}" for i in range(120)]
+
+    async def fake_batch(self, prompts, model, **kwargs):
+        def reply(prompt):
+            chunk = [line for line in prompt.split("\n") if line in names]
+            return {"scores": {n: (5 if model == "a/judge" else 7) for n in chunk if n != "n7"}}
+        return [reply(p) for p in prompts]
+
+    original = judge_module.LLMWrapper.batch_json_complete
+    judge_module.LLMWrapper.batch_json_complete = fake_batch
+    try:
+        scores, _ = NameJudge(models=["a/judge", "b/judge"]).screen(names, "BRIEF")
+    finally:
+        judge_module.LLMWrapper.batch_json_complete = original
+    check("screen score is the panel mean of the {scores: {...}} replies", scores["n0"] == 6.0, scores["n0"])
+    check("a name no judge screened is None, not 0", scores["n7"] is None, scores["n7"])
+
+
 def test_examples():
     print("Taste examples:")
     ratings = {f"n{i}": 1 + i % 5 for i in range(200)}
@@ -121,8 +166,10 @@ def test_examples():
 
 def main():
     test_source_weights()
+    test_extra_words()
     test_naturalness()
     test_judge_panel()
+    test_screen()
     test_examples()
     print()
     if failures:

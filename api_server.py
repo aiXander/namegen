@@ -17,10 +17,11 @@ import threading
 import queue
 import time
 from typing import Any, Callable, Dict, Iterator, List, Optional
-from markov_namegen import MarkovNameGenerator, WORD_LISTS_DIR, nearest_training_word
+from markov_namegen import MarkovNameGenerator, WORD_LISTS_DIR, MIN_SEED_DISTANCE, nearest_training_word
 from markov.constraint_sampler import GenerationConstraints
 from ai.judge import NameJudge, build_brief, select_examples, DEFAULT_JUDGES, DEFAULT_FINAL_MODEL
-from ai.embeddings import prefilter_names, EmbeddingPrefilter, DEFAULT_EMBEDDING_MODEL
+from ai.embeddings import EmbeddingPrefilter, DEFAULT_EMBEDDING_MODEL
+from ai.lexicon import build_lexicon, DEFAULT_LEXICON_MODEL
 from markov.dataset_stats import compute_dataset_stats
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -357,7 +358,7 @@ def _brief(data: Dict[str, Any], names: List[str]) -> str:
     examples (excluding the names being judged)."""
     description = (data.get('description') or '').strip()
     if not description:
-        raise ValueError('Write a brief first (Judge tab): what are these names for?')
+        raise ValueError('Write a brief first (Brief tab): what are these names for?')
     return build_brief(description, _keywords(data), data.get('guidance') or '',
                        select_examples(saved_ratings, exclude=names))
 
@@ -366,13 +367,13 @@ def _brief(data: Dict[str, Any], names: List[str]) -> str:
 def ai_judge_stream():
     """Two-stage AI scoring as an SSE stream.
 
-    1. Optional embedding prefilter: with vibe keywords set, every name is
-       ranked by similarity and only the top `prefilter_keep` (and >=
-       `min_similarity`) reach the judges.
-    2. Judge panel: every model in `judges` scores every remaining name.
+    1. Quick screen: when there are more names than `keep`, every judge gives
+       each name a bare 0-10 score (big chunks, no notes — ~1/6 the cost of a
+       verdict) and only the top `keep` go on.
+    2. Judge panel: every model in `judges` gives the survivors a full verdict.
 
-    Events: {type: embed_progress|judge_progress, done, total}, then
-    {type: complete, verdicts, similarities, prefilter, cost}.
+    Events: {type: screen_progress|judge_progress, done, total}, then
+    {type: complete, verdicts, screen, cost}.
     """
     data = request.json or {}
 
@@ -381,46 +382,53 @@ def ai_judge_stream():
         if not names:
             raise ValueError('No names to judge — generate some first')
         brief = _brief(data, names)
-        keywords = _keywords(data)
         judges = data.get('judges') or DEFAULT_JUDGES
-        cost = {'embedding': 0.0, 'judging': 0.0}
-
-        similarities: Dict[str, float] = {}
-        prefilter = None
-        if keywords:
-            min_similarity = float(data.get('min_similarity') or 0.0)
-            result = prefilter_names(
-                names, keywords, keep_top=int(data.get('prefilter_keep') or 200),
-                model=data.get('embedding_model') or DEFAULT_EMBEDDING_MODEL,
-                min_similarity=min_similarity,
-                progress_callback=lambda done, total: emit(
-                    {'type': 'embed_progress', 'done': done, 'total': total}))
-            # Similarities for ALL names, so the Vibe column survives the cut.
-            similarities = dict(result['ranked'])
-            names = [name for name, _ in result['kept']]
-            cost['embedding'] = result['cost']
-            prefilter = {'total': result['total'], 'kept': len(names), 'min_similarity': min_similarity}
-            logger.info("Vibe prefilter kept %d/%d names (cost=$%.5f)", len(names), result['total'], result['cost'])
-            if not names:
-                raise ValueError(f'No names passed the vibe cutoff (>= {min_similarity:.2f}). '
-                                 'Lower the cutoff in the Judge tab.')
-        else:
-            names = names[:int(data.get('prefilter_keep') or 200)]
-
+        keep = max(1, int(data.get('keep') or 500))
         judge = NameJudge(models=judges, chunk_size=int(data.get('chunk_size') or 20))
+        cost = {'screen': 0.0, 'judging': 0.0}
+
+        screen = None
+        if len(names) > keep:
+            scores, cost['screen'] = judge.screen(
+                names, brief,
+                progress_callback=lambda done, total: emit({'type': 'screen_progress', 'done': done, 'total': total}))
+            # Unscreened names (judge errors) rank last rather than vanish.
+            ranked = sorted(names, key=lambda n: -1 if scores[n] is None else scores[n], reverse=True)
+            names = ranked[:keep]
+            screen = {'total': len(ranked), 'kept': len(names),
+                      'failed': sum(score is None for score in scores.values())}
+            logger.info("Quick screen kept %d/%d names (cost=$%.5f)", len(names), len(ranked), cost['screen'])
+
         verdicts, cost['judging'] = judge.judge(
             names, brief,
             progress_callback=lambda done, total: emit({'type': 'judge_progress', 'done': done, 'total': total}))
         logger.info("Judged %d names with %s (cost=$%.5f)", len(names), judges, cost['judging'])
         return {
             'verdicts': verdicts,
-            'similarities': similarities,
-            'prefilter': prefilter,
+            'screen': screen,
             'judges': judges,
-            'cost': {**cost, 'total': cost['embedding'] + cost['judging']},
+            'cost': {**cost, 'total': cost['screen'] + cost['judging']},
         }
 
     return _stream_worker(work)
+
+
+@app.route('/api/ai/lexicon', methods=['POST'])
+def ai_lexicon():
+    """Collect real words evoking the brief, to mix into the Markov training
+    data: {description, keywords, guidance, exclude?} -> {words, cost}.
+    `exclude` (the current lexicon) asks for fresh words."""
+    data = request.json or {}
+    try:
+        model = data.get('model') or DEFAULT_LEXICON_MODEL
+        words, cost = build_lexicon(_brief(data, []), model=model, exclude=data.get('exclude') or [])
+        logger.info("Lexicon: %d words from %s (cost=$%.5f)", len(words), model, cost)
+        return jsonify({'words': words, 'cost': cost})
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        logger.exception("Lexicon failed")
+        return jsonify({'error': str(e)}), 500
 
 
 @app.route('/api/ai/final-round', methods=['POST'])
@@ -456,7 +464,7 @@ def ai_embed_rank_stream():
         if not names:
             raise ValueError('No names provided')
         if not keywords:
-            raise ValueError('Add some vibe keywords in the Judge tab first')
+            raise ValueError('Add some vibe words in the Brief tab first')
         embedding_model = data.get('embedding_model') or DEFAULT_EMBEDDING_MODEL
         ranked, cost = EmbeddingPrefilter(model=embedding_model).rank_names(
             names, keywords,
@@ -514,6 +522,7 @@ def _generator_key(config: Dict[str, Any]) -> str:
     weighting = training.get('weighting', 'natural')
     key = {
         'sources': sorted(training.get('sources', [])),
+        'extras': [training.get(k) for k in ('lexicon', 'lexicon_share', 'breed', 'seeds', 'seed_share')],
         'model': config.get('model', {}),
         'weighting': weighting,
         'ratings': {s: word_list_ratings.get(s) for s in training.get('sources', [])} if weighting == 'rating' else None,
@@ -530,11 +539,14 @@ def _get_generator(config: Dict[str, Any]) -> MarkovNameGenerator:
         if cached_generator is not None and cached_generator_key == key:
             return cached_generator
         model = config.get('model', {})
-        logger.info("Training generator: %d sources, order=%s, temp=%s, backoff=%s, weighting=%s",
+        logger.info("Training generator: %d sources, order=%s, temp=%s, backoff=%s, weighting=%s, "
+                    "lexicon=%d, seeds=%d",
                     len(config['training_data']['sources']), model.get('order', 3), model.get('temperature', 1.0),
-                    model.get('backoff', True), config['training_data'].get('weighting', 'natural'))
+                    model.get('backoff', True), config['training_data'].get('weighting', 'natural'),
+                    len(config['training_data'].get('lexicon') or []),
+                    len(config['training_data'].get('seeds') or []) if config['training_data'].get('breed') else 0)
         generator = MarkovNameGenerator(config={
-            'training_data': config['training_data'],
+            'training_data': config['training_data'],  # incl. lexicon + breeding seeds
             'model': {'order': model.get('order', 3), 'temperature': model.get('temperature', 1.0),
                       'backoff': model.get('backoff', True)},
             'word_list_ratings': word_list_ratings,
@@ -642,7 +654,10 @@ def generate_names_with_progress(generator: MarkovNameGenerator, config: Dict[st
             counts['training_word'] += 1
         else:
             nearest = nearest_training_word(name, generator.unique_training_words)
+            seed = nearest_training_word(name, generator.seed_words) if generator.seed_words else None
             if nearest and nearest[1] < min_distance:
+                counts['too_similar'] += 1
+            elif seed and seed[1] < MIN_SEED_DISTANCE:
                 counts['too_similar'] += 1
             else:
                 names.add(name)

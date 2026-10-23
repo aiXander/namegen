@@ -27,7 +27,6 @@ andras
 andrealphus
 andromalius
 angra
-antichrist
 anzu
 apollyon
 archon
@@ -49,7 +48,6 @@ bakasura
 balam
 balberith
 bali
-banshee
 baphomet
 barbas
 barbatos
@@ -95,7 +93,6 @@ davy
 decarabia
 demiurge
 demogorgon
-devil
 drekavac
 dzoavits
 eblis
@@ -107,7 +104,6 @@ focalor
 foraii
 foras
 forcas
-forcas
 forneus
 furcas
 furfur
@@ -115,10 +111,8 @@ gaap
 gaderel
 gaki
 gamigin
-ghoul
 glasya
 gomory
-gorgon
 gremory
 grigori
 gualichu
@@ -150,7 +144,6 @@ krampus
 kroni
 kumbhakarna
 lechies
-legion
 lempo
 leraie
 leraje
@@ -180,7 +173,6 @@ merihem
 moloch
 morax
 morpheus
-murmur
 naamah
 naberius
 naberus

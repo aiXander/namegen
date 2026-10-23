@@ -25,7 +25,6 @@ bolzano
 brescia
 brindisi
 cagliari
-calabria
 caltanissetta
 campobasso
 carpi
@@ -45,7 +44,6 @@ cosenza
 cremona
 crotone
 cuneo
-emilia
 ercolano
 faenza
 fano
@@ -101,7 +99,8 @@ pozzuoli
 prato
 ragusa
 ravenna
-reggio
+reggiocalabria
+reggioemilia
 rho
 rimini
 rome

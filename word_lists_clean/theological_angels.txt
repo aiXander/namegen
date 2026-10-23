@@ -5,9 +5,7 @@ ahriman
 ambriel
 amesha
 anael
-angel
 arariel
-archangel
 ariel
 azazel
 azrael
@@ -19,7 +17,6 @@ cherub
 cherubim
 daniel
 dardail
-dominions
 dumah
 eremiel
 gabriel
@@ -60,9 +57,7 @@ nuriel
 pahaliah
 penemue
 phanuel
-powers
 poyel
-principalities
 puriel
 qaphsiel
 raguel
@@ -82,14 +77,11 @@ shamsiel
 simiel
 temeluchus
 tennin
-thrones
 tzaphqiel
 uriel
 uzziel
 vehuel
-virtues
-wormwood
-zach
+zachariel
 zadkiel
 zaphkiel
 zephon

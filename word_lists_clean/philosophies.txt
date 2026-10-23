@@ -12,16 +12,13 @@ agnosticism
 agnotology
 altruism
 amorfati
-analytic
 anarchism
 ancient
 animism
-anomalous
 anthropocentrism
 anti
 antinatalism
 antireductionism
-applied
 aristotelianism
 asceticism
 atavism
@@ -66,7 +63,6 @@ cosmopolitanism
 creationism
 critical
 criticism
-cultural
 cynicism
 daoism
 darwinism
@@ -90,7 +86,6 @@ ecumenism
 egalitarianism
 egocentrism
 egoism
-elativism
 eliminativematerialism
 empiricism
 environmentalism
@@ -147,7 +142,6 @@ imperialism
 incontinence
 individualism
 inductionism
-informal
 innatism
 instrumental
 instrumentalism
@@ -168,7 +162,6 @@ lemma
 liberalism
 libertarianism
 literary
-logic
 logicians
 logicism
 lutheranism
@@ -256,7 +249,6 @@ pragmatism
 premillennialism
 presentism
 progressivism
-property
 proselytism
 pseudo
 psychiatry

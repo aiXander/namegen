@@ -20,7 +20,7 @@ This isn't just another random name generator. It's a sophisticated **statistica
 - 🎛️ **Respects complex constraints** through integrated constraint sampling
 - 🤖 **Leverages AI scoring** to rank generated names by quality and relevance based on a natural language description 
 - ⚡ **Generates in real-time** with a sleek React interface
-- 📊 **Provides 121 curated datasets** covering everything from company names to fantasy creatures
+- 📊 **Provides 69 curated datasets** covering everything from company names to fantasy creatures
 
 ---
 
@@ -70,14 +70,16 @@ starts_with="tech" + ends_with="corp" + length=8-12
 
 ### 🤖 AI Judging: statistics invent, AI judges
 
-LLMs are bad at *inventing* names: they reach for the predictable, internet-average token. Here the Markov chains invent, and AI only judges:
+LLMs are bad at *inventing* names: they reach for the predictable, internet-average token. Here the Markov chains invent, and AI only looks up words and judges:
 
-1. **Vibe prefilter**: every name is embedded and ranked by similarity to your vibe keywords, at next to no cost. Generate thousands and send only the most on-vibe ones on.
-2. **Judge panel**: several fast models (default Claude Haiku 5.5 + GPT-6 Luna) each score every name 0–10 for sound, fit and distinctiveness, with a one-line note on what it evokes and a flag for existing brands or unfortunate meanings. The panel mean is the score.
-3. **Final round**: a stronger model compares the top ~25 head to head, ranks them, and pitches each.
-4. **Your taste**: your star ratings are sent to the judges as examples, so they calibrate to you.
+1. **Brief lexicon**: from your brief, an LLM collects real words and roots in many languages (koru, noos, lokahi…). They get mixed into the Markov training data, so invented names carry echoes of meaning. In testing this doubled the names the judges rated 5+.
+2. **Quick screen**: every judge gives every name a bare score, 50 names per call, and only the best few hundred get a full verdict. It keeps ~75% of the gems where the old embedding prefilter kept ~30%.
+3. **Judge panel**: several fast models (default Claude Haiku 5.5 + GPT-6 Luna) each score every name 0–10 for sound, fit and distinctiveness, with a one-line note on what it evokes and a flag for existing brands or unfortunate meanings. The panel mean is the score.
+4. **Final round**: a stronger model compares the top ~30 (near-duplicate spellings skipped) head to head, ranks them, and pitches each.
+5. **Breed**: tick *breed* and the next round trains on the winners and your 4–5★ names, exploring around them (re-spellings of a winner are rejected).
+6. **Your taste**: your star ratings are sent to the judges as examples, so they calibrate to you.
 
-Judging 500 names with two judges costs about $0.04.
+A round (3000 names screened, 500 judged, final round) costs about $0.09.
 
 ---
 
@@ -93,7 +95,7 @@ cd react_gui && npm start
 
 **Features:**
 
-- 📊 **Training Data Explorer** - Browse and rate 121 curated word lists
+- 📊 **Training Data Explorer** - Browse and rate 69 curated word lists
 - ⚙️ **Parameter Tuning** - Real-time adjustment of model settings
 - 🎯 **Constraint Builder** - Visual constraint configuration
 - 📈 **Results** - Keyboard triage (↑↓ to move, 1–5 to rate), search and filters, CSV export, per-name naturalness and "nearest real word"
@@ -102,32 +104,17 @@ cd react_gui && npm start
 
 ---
 
-## 📚 Rich Training Data (121+ Datasets)
+## 📚 Rich Training Data (69 Curated Datasets)
 
-Our curated collection spans diverse domains:
+Curated for *sound*: every list shares a distinctive phonetic character, and plain-English vocabulary lists were removed because they only teach the model to mangle English. Some examples:
 
-**🏢 Business & Tech**
+- **Myth & fantasy:** `theological_angels`, `theological_demons`, `roman_deities`, `egyptian_deities`, `brythonic_deities`, `hindu_deities`, `tolkienesque_forenames`, `fantasy_creatures`, `pokemon`
+- **Forenames by culture:** `icelandic_forenames`, `irish_forenames`, `japanese_forenames`, `swedish_forenames`, `italian_forenames`, and more
+- **Places:** `greek_islands`, `roman_place_names`, `norwegian_fjords`, `german_towns`, `world_places`, `cumbrian_places`
+- **Nature & science:** `dinosaurs`, `minerals`, `flowers_common_names`, `satellites_natural`, `stars_and_constellations`, `pharmaceuticals`
+- **Brands:** `websites`, `consumer_brands`, `american_companies`, `cryptocurrencies`
 
-- `american_companies.txt` - Fortune 500 company names
-- `tech_companies.txt` - Startup and tech company names  
-- `crypto_coins.txt` - Cryptocurrency and token names
-
-**🌍 Geography & Culture**  
-
-- `american_cities.txt`, `world_cities.txt` - Geographic locations
-- `american_forenames.txt`, `world_surnames.txt` - Cultural names
-
-**🎮 Creative & Fantasy**
-
-- `fantasy_creatures.txt` - Mythical beings and monsters
-- `sci_fi_terms.txt` - Science fiction vocabulary
-- `game_items.txt` - RPG weapons, spells, and artifacts
-
-**🔬 Academic & Scientific**
-
-- `atomic_particles.txt` - Physics terminology
-- `medical_terms.txt` - Healthcare vocabulary  
-- `programming_languages.txt` - Tech stack names
+Each list shows a **Markov health** score in the GUI: whether its statistics produce novel names or mostly replay its own words.
 
 ---
 
@@ -172,7 +159,7 @@ generation:
   excludes: ""          # Cannot contain substring
 
 training_data:
-  sources:              # Select from 121+ available datasets
+  sources:              # Select from 69 available datasets
     - "tech_companies.txt"
     - "startups.txt"
 ```

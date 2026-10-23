@@ -12,11 +12,9 @@ agnosticism
 agnotology
 altruism
 amorfati
-analytic philosophy
 anarchism
 ancientphilosophy
 animism
-anomalous monism
 anthropocentrism
 antiimperialism
 antiintellectualism
@@ -24,7 +22,6 @@ antinatalism
 antipsychiatry
 antirealism
 antireductionism
-applied ethics
 aristotelianism
 asceticism
 atavism
@@ -74,7 +71,6 @@ cosmopolitanism
 creationism
 criticalrationalism
 criticalrealism
-cultural elativism
 cynicism
 daoism
 darwinism
@@ -111,7 +107,6 @@ eudaimonism
 eugenics
 evangelism
 existentialism
-externalism
 externalism
 extremism
 fallacy
@@ -152,7 +147,6 @@ illuminationism
 incontinence
 individualism
 inductionism
-informal logic
 innatism
 instrumentalism
 instrumentalrationality
@@ -265,7 +259,6 @@ pragmatism
 premillennialism
 presentism
 progressivism
-property dualism
 proselytism
 pseudophilosophy
 psychologicalegoism

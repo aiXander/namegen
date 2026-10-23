@@ -15,7 +15,7 @@ beriberi
 botulism
 bronchitis
 brucellosis
-bubonic plague
+plague
 bunion
 calculi
 cancer
@@ -93,7 +93,6 @@ peritonitis
 pertussis
 phenylketonuria
 pilia
-plague
 pneumonia
 poliomyelitis
 porphyria

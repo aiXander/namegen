@@ -2,10 +2,13 @@
 """Cleanup pass over word_lists/ — fixes the statistical problems that poison the Markov models.
 
 Problems fixed, per entry:
-  1. Unicode noise      → NFKD-normalize, strip diacritics (münchen → munchen) instead of dropping the word.
+  1. Unicode noise      → NFKD-normalize, strip diacritics (münchen → munchen) instead of dropping the word;
+                          transliterate letters NFKD can't decompose (þ → th, ð → d, ø → o, æ → ae, ß → ss).
   2. Multi-word entries → split on spaces/hyphens/underscores into component tokens (each is valid training data).
-  3. Glued compounds    → segment long concatenations with wordninja ("alabamaslammer" → alabama, slammer);
-                          the cross-boundary n-grams of glued entries are linguistic garbage.
+  3. Glued compounds    → segment long concatenations with wordninja ("acornwoodpecker" → acorn, woodpecker);
+                          the cross-boundary n-grams of glued entries are linguistic garbage. Only for the
+                          English-compound lists in SEGMENT_LISTS: on names wordninja shatters real words
+                          (ulfhildur → ulf/hil/dur, therosaurus → the/rosa/urus, pyrochlore → pyr/och/lore).
   4. Punctuation        → strip apostrophes/periods/digits-only junk.
   5. Duplicates         → dedup per file (duplicates double-weight transitions for no reason).
   6. Degenerate tokens  → drop tokens shorter than MIN_TOKEN_LEN.
@@ -31,12 +34,25 @@ SEGMENT_MIN_LEN = 9
 # Accept a wordninja split only if every part is at least this long; unknown words
 # tend to shatter into 1-2 char fragments, which signals "not actually a compound".
 SEGMENT_MIN_PART_LEN = 3
+# Lists whose raw entries are glued *English* compounds (common names, English place names). Every other
+# list is names/foreign words, where an English-dictionary segmenter only produces false splits.
+SEGMENT_LISTS = {
+    "animals", "birds_common_names", "fish", "plants_common_names", "flowers_common_names", "edible_plants",
+    "cumbrian_places", "american_places", "fabrics", "philosophies", "programming_languages",
+}
 
 NON_ALPHA = re.compile(r"[^a-z]")
 
 
+# Letters NFKD does not decompose: without this map they were silently deleted
+# (þrúðr → rr, bjørna → bjrna, aßlar → alar), damaging ~870 Icelandic/Norse/Norwegian/German entries.
+TRANSLITERATE = str.maketrans({"þ": "th", "ð": "d", "æ": "ae", "ø": "o", "œ": "oe", "ß": "ss",
+                               "ł": "l", "đ": "d", "ı": "i"})
+
+
 def strip_diacritics(text: str) -> str:
-    """münchen → munchen, café → cafe"""
+    """münchen → munchen, café → cafe, þórr → thorr"""
+    text = text.translate(TRANSLITERATE)
     return "".join(c for c in unicodedata.normalize("NFKD", text) if not unicodedata.combining(c))
 
 
@@ -50,7 +66,7 @@ def segment_glued(token: str) -> list:
     return [token]
 
 
-def clean_entry(line: str) -> list:
+def clean_entry(line: str, segment: bool = True) -> list:
     """Turn one raw line into zero or more clean lowercase alpha tokens."""
     text = strip_diacritics(line.strip().lower())
     # apostrophes/periods join their neighbours (o'brien → obrien, st. → st)
@@ -60,7 +76,7 @@ def clean_entry(line: str) -> list:
         token = NON_ALPHA.sub("", raw)
         if not token:
             continue
-        tokens.extend(segment_glued(token))
+        tokens.extend(segment_glued(token) if segment else [token])
     return [t for t in tokens if len(t) >= MIN_TOKEN_LEN]
 
 
@@ -71,8 +87,9 @@ def clean_file(src_path: str, dst_path: str, verbose: bool = False) -> dict:
     seen = set()
     cleaned = []
     n_split = 0
+    segment = os.path.splitext(os.path.basename(src_path))[0] in SEGMENT_LISTS
     for line in raw_lines:
-        tokens = clean_entry(line)
+        tokens = clean_entry(line, segment)
         if len(tokens) > 1:
             n_split += 1
             if verbose:

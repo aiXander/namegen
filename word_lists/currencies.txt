@@ -3,13 +3,11 @@ angolar
 argentino
 austral
 baht
-bitcoin
 boliviano
 bolívar
 colón
 cupon
 córdoba
-dime
 dinar
 diner
 dinero
@@ -38,7 +36,6 @@ guilder
 gulden
 hryvnia
 hwan
-inca
 karbovanets
 keping
 kolion
@@ -72,13 +69,11 @@ metical
 mohar
 mon
 mun
-newpence
 ostmark
 ostruble
 paisa
 peseta
 peso
-phoenix
 piastra
 piastre
 pitis
@@ -86,7 +81,6 @@ pound
 quetzal
 rand
 reaal
-real
 real
 reichsmark
 reichsthaler
@@ -99,7 +93,6 @@ rijksdaalder
 riksdaler
 ringgit
 rixdollar
-riyal
 riyal
 roepiah
 ruble
@@ -122,7 +115,6 @@ speciethaler
 sucre
 tenge
 thaler
-tradedollar
 vatu
 venezolano
 vereinsthaler

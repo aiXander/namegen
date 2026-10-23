@@ -76,7 +76,7 @@ blackwell
 blair
 blake
 blanchard
-blanken
+blankenship
 blevins
 bolton
 bond
@@ -840,7 +840,6 @@ shepherd
 sheppard
 sherman
 shields
-ship
 short
 silva
 simmons

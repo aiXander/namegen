@@ -11,7 +11,7 @@ amandine
 amelie
 andre
 andree
-angeli
+angelique
 anne
 annemarie
 annick
@@ -43,7 +43,7 @@ celine
 chantal
 charles
 chloe
-christ
+christelle
 christian
 christiane
 christine
@@ -72,7 +72,6 @@ dylan
 eliane
 elisabeth
 elise
-elle
 elodie
 emilie
 emma
@@ -125,11 +124,17 @@ jacqueline
 jacques
 janine
 jean
+jeanclaude
+jeanfrancois
+jeanlouis
 jeanluc
 jeanmarc
+jeanmarie
+jeanmichel
 jeanne
 jeannine
 jeanpaul
+jeanpierre
 jennifer
 jerome
 jessica
@@ -173,6 +178,9 @@ marcelle
 marguerite
 maria
 marie
+mariechristine
+marieclaude
+marietherese
 marine
 marion
 martine
@@ -215,7 +223,7 @@ paulette
 pauline
 philippe
 pierre
-que
+pierrette
 quentin
 raphael
 raymond
@@ -254,7 +262,6 @@ theo
 therese
 thierry
 thomas
-tte
 valentin
 valerie
 vanessa

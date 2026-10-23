@@ -13,10 +13,13 @@ interface AITabProps {
 const DEFAULT_JUDGES = ['anthropic/claude-haiku-5.5', 'openai/gpt-6-luna'];
 
 // Rough token budget per judge call, for the cost estimate: the fixed system
-// prompt + brief per chunk, and a ~45-token verdict per name.
+// prompt + brief per chunk, and a ~45-token verdict per name (~8 for the
+// quick screen's bare score, 50 names per call).
 const SYSTEM_TOKENS = 420;
 const TOKENS_PER_NAME_IN = 4;
 const TOKENS_PER_NAME_OUT = 45;
+const SCREEN_TOKENS_OUT = 8;
+const SCREEN_CHUNK = 50;
 
 const priceLabel = (m?: ModelInfo) =>
   m?.price ? `$${m.price.prompt.toFixed(2)} / $${m.price.completion.toFixed(2)} per M` : 'price unknown';
@@ -26,8 +29,6 @@ const AITab: React.FC<AITabProps> = ({ config, patchConfig, models, nameCount })
   const judges = llm.judges?.length ? llm.judges : DEFAULT_JUDGES;
   const maxNames = config.ai_settings?.max_names ?? 200;
   const chunkSize = llm.chunk_size ?? 20;
-  const keywords = (llm.keywords || '').trim();
-  const minSimilarity = llm.min_similarity ?? 0;
   const finalModel = llm.final_model || 'anthropic/claude-sonnet-5.5';
   const finalSize = llm.final_size ?? 25;
   const byId = Object.fromEntries(models.map(m => [m.id, m]));
@@ -40,80 +41,43 @@ const AITab: React.FC<AITabProps> = ({ config, patchConfig, models, nameCount })
 
   // What one "Judge" click costs at the current settings
   const judged = Math.min(maxNames, nameCount || maxNames);
+  const screened = nameCount > maxNames ? nameCount : 0;
   const briefTokens = SYSTEM_TOKENS + Math.round(((llm.description || '') + (llm.guidance || '')).split(/\s+/).length * 1.4) + 300;
+  const callCost = (names: number, perCall: number, outPerName: number, price: { prompt: number; completion: number }) =>
+    ((Math.ceil(names / perCall) * briefTokens + names * TOKENS_PER_NAME_IN) * price.prompt +
+      names * outPerName * price.completion) / 1e6;
   const estimate = judges.reduce((sum, id) => {
     const price = byId[id]?.price;
     if (!price) return sum;
-    const calls = Math.ceil(judged / chunkSize);
-    const inTokens = calls * briefTokens + judged * TOKENS_PER_NAME_IN;
-    return sum + (inTokens * price.prompt + judged * TOKENS_PER_NAME_OUT * price.completion) / 1e6;
+    return sum + callCost(judged, chunkSize, TOKENS_PER_NAME_OUT, price) +
+      callCost(screened, SCREEN_CHUNK, SCREEN_TOKENS_OUT, price);
   }, 0);
 
   return (
     <div className="judge-layout">
       <div className="space-y-4">
         <section className="card">
-          <div className="card-header">The brief</div>
-          <label className="form-label">What is the name for? What should it feel like, and what should it hint at?</label>
-          <textarea
-            className="form-textarea"
-            rows={6}
-            value={llm.description || ''}
-            onChange={e => patchConfig('llm', { description: e.target.value })}
-            placeholder="e.g. An AI agent that acts as the collective memory of a community. Warm, organic, grounded; ideally hints at many minds acting as one."
-          />
-          <label className="form-label mt-4">Extra guidance <span className="text-muted">(optional)</span></label>
-          <textarea
-            className="form-textarea"
-            rows={2}
-            value={llm.guidance || ''}
-            onChange={e => patchConfig('llm', { guidance: e.target.value })}
-            placeholder="e.g. Must be easy to say in Dutch and English. No -ify / -ly endings. Short beats long."
-          />
-          <p className="field-help">
-            Your star ratings are sent along as taste examples (stratified, so dislikes count too). Rate a
-            handful of names and the judges calibrate to you.
+          <div className="card-header">Quick screen</div>
+          <p className="field-help mb-2">
+            Generating thousands of names is free; judging them properly is not. When there are more names than
+            this, every judge first gives each one a bare 0–10 score (50 per call, about a sixth of the cost of a
+            full verdict) and only the best go to the panel. The brief lives in the <strong>Brief</strong> tab.
           </p>
-        </section>
-
-        <section className="card">
-          <div className="card-header">Vibe prefilter</div>
-          <label className="form-label">Vibe keywords</label>
-          <input
-            className="form-input"
-            value={llm.keywords || ''}
-            onChange={e => patchConfig('llm', { keywords: e.target.value })}
-            placeholder="e.g. murmuration, mycelium, chorus, hearth"
-          />
-          <p className="field-help">
-            Every name is embedded and compared to these anchors, which costs next to nothing. Use them to generate thousands
-            of names and send only the most on-vibe ones to the judges. <strong>Vibe rank</strong> fills the Vibe
-            column without judging.
-          </p>
-          <div className="form-group mt-4">
+          <div className="form-group">
             <label className="form-label">
-              Names per judging run: <strong>{maxNames.toLocaleString()}</strong>
-              <span className="text-muted"> {keywords ? '(the top by vibe)' : '(no keywords: the first ones generated)'}</span>
+              Names that get a full verdict: <strong>{maxNames.toLocaleString()}</strong>
+              <span className="text-muted">
+                {nameCount > maxNames ? ` (screened from ${nameCount.toLocaleString()})` : ' (no screen needed)'}
+              </span>
             </label>
             <input type="range" className="range-slider w-full" min={10} max={2000} step={10} value={maxNames}
               onChange={e => patchConfig('ai_settings', { max_names: Number(e.target.value) })} />
-          </div>
-          <div className="form-group">
-            <label className="form-label">
-              Minimum vibe: <strong>{minSimilarity > 0 ? minSimilarity.toFixed(2) : 'off'}</strong>
-            </label>
-            <input type="range" className="range-slider w-full" min={0} max={1} step={0.01} value={minSimilarity}
-              disabled={!keywords}
-              onChange={e => patchConfig('llm', { min_similarity: Number(e.target.value) })} />
             <p className="field-help">
-              Names below this never reach the judges and are dimmed in Results. Similarity scales differ per embedding
-              model, so run Vibe rank first and read the Vibe column before setting this.
+              In testing, keeping the top sixth kept 75% of the names the panel rated 5+ and 90% of those rated 6+.
             </p>
           </div>
         </section>
-      </div>
 
-      <div className="space-y-4">
         <section className="card">
           <div className="card-header">Judge panel</div>
           <p className="field-help mb-2">
@@ -133,6 +97,7 @@ const AITab: React.FC<AITabProps> = ({ config, patchConfig, models, nameCount })
             })}
           </div>
           <div className="estimate">
+            {screened > 0 && `Screening ${screened.toLocaleString()} and `}
             Judging {judged.toLocaleString()} names with {judges.length} judge{judges.length > 1 ? 's' : ''} ≈{' '}
             <strong>{estimate ? formatCost(estimate) : '?'}</strong>
           </div>
@@ -143,12 +108,15 @@ const AITab: React.FC<AITabProps> = ({ config, patchConfig, models, nameCount })
             <p className="field-help">Smaller calls give more independent verdicts but repeat the brief more often.</p>
           </div>
         </section>
+      </div>
 
+      <div className="space-y-4">
         <section className="card">
           <div className="card-header">Final round</div>
           <p className="field-help mb-2">
             One stronger model compares the best-scored names head to head, ranks them, and pitches each one.
-            LLMs are much better at comparing names than at scoring them in isolation.
+            LLMs are much better at comparing names than at scoring them in isolation. Near-duplicate spellings
+            are skipped, so the shortlist compares different ideas.
           </p>
           <div className="grid grid-cols-2 gap-4">
             <div className="form-group">
@@ -168,12 +136,13 @@ const AITab: React.FC<AITabProps> = ({ config, patchConfig, models, nameCount })
         </section>
 
         <section className="card">
-          <div className="card-header">Embedding model</div>
+          <div className="card-header">Embedding model <span className="text-muted">(Vibe rank only)</span></div>
           <input className="form-input" value={llm.embedding_model || ''}
             onChange={e => patchConfig('llm', { embedding_model: e.target.value })}
             placeholder="openai/text-embedding-3-large" />
           <p className="field-help">
-            Any OpenRouter embedding model. Must be allowed by your OpenRouter privacy settings (the old
+            Fills the optional Vibe column: similarity to your vibe words. A weak signal on invented words, so it
+            no longer decides what gets judged. Any OpenRouter embedding model. Must be allowed by your OpenRouter privacy settings (the old
             google/gemini-embedding-2 default is blocked by zero-data-retention).
           </p>
         </section>

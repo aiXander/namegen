@@ -93,7 +93,7 @@ const SamplingParametersTab: React.FC<SamplingParametersTabProps> = ({ config, p
               <label className="form-label">Names to generate</label>
               <input type="number" className="form-input" min={1} max={20000} value={gen.n_words}
                 onChange={e => setGen({ n_words: Math.max(1, Number(e.target.value) || 1) })} />
-              <p className="field-help">Generate thousands; the vibe prefilter and judges sort them out.</p>
+              <p className="field-help">Generate thousands; the quick screen and the judges sort them out.</p>
             </div>
             <div className="form-group">
               <label className="form-label">Length: <strong>{gen.min_length}–{gen.max_length}</strong> letters</label>

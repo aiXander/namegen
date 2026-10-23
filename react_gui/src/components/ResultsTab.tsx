@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronUp, ChevronDown, Copy, Download, Search, AlertTriangle, Trophy } from 'lucide-react';
-import { FinalEntry, GenerationStats, NameRow, PrefilterInfo, Verdict } from '../services/api';
+import { FinalEntry, GenerationStats, NameRow, ScreenInfo, Verdict } from '../services/api';
 import { compareBest, downloadCsv, ResultItem, shortModel, titleCase } from '../lib/names';
 import StarRating from './StarRating';
 
@@ -12,9 +12,8 @@ interface ResultsTabProps {
   ratings: Record<string, number>;
   onRate: (name: string, rating: number) => void;
   genStats: GenerationStats | null;
-  prefilter: PrefilterInfo | null;
-  simCutoff?: number;
-  onGoTo: (tab: 'sources' | 'sampling' | 'judge') => void;
+  screen: ScreenInfo | null;
+  onGoTo: (tab: 'brief' | 'sources' | 'sampling' | 'judge') => void;
 }
 
 type SortKey = 'best' | 'score' | 'vibe' | 'natural' | 'novelty' | 'name' | 'length' | 'rating';
@@ -55,7 +54,7 @@ function rejectionSummary(stats: GenerationStats): string {
 }
 
 const ResultsTab: React.FC<ResultsTabProps> = ({
-  rows, verdicts, similarities, final, ratings, onRate, genStats, prefilter, simCutoff, onGoTo
+  rows, verdicts, similarities, final, ratings, onRate, genStats, screen, onGoTo
 }) => {
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<Filter>('all');
@@ -147,12 +146,14 @@ const ResultsTab: React.FC<ResultsTabProps> = ({
       <div className="empty-state">
         <h2 className="empty-title">Nothing forged yet</h2>
         <ol className="empty-steps">
+          <li><button className="link-button" onClick={() => onGoTo('brief')}>Write the brief</button> and collect
+            its lexicon: real words for its ideas that seed the model with meaningful sounds.</li>
           <li><button className="link-button" onClick={() => onGoTo('sources')}>Pick word lists</button> whose
-            <em> sound</em> you like. Their letter patterns are all the model learns.</li>
+            <em> sound</em> you like. Their letter patterns are the rest of what the model learns.</li>
           <li><button className="link-button" onClick={() => onGoTo('sampling')}>Shape the output</button>:
             length, prefixes and suffixes, how adventurous the sampling is.</li>
-          <li>Hit <strong>Generate</strong>, then <button className="link-button" onClick={() => onGoTo('judge')}>
-            brief the judges</button> and let them find the gems.</li>
+          <li>Hit <strong>Generate</strong>, then <strong>Judge</strong>, and let the panel find the gems. Tick
+            <strong> breed</strong> to make the next round explore around the winners.</li>
         </ol>
       </div>
     );
@@ -176,11 +177,11 @@ const ResultsTab: React.FC<ResultsTabProps> = ({
             {genStats.attempts.toLocaleString()} attempts in {genStats.elapsed}s. {rejectionSummary(genStats)}
           </p>
         )}
-        {prefilter && (
+        {screen && (
           <p>
-            Vibe prefilter sent the top <strong>{prefilter.kept.toLocaleString()}</strong> of{' '}
-            {prefilter.total.toLocaleString()} names to the judges
-            {prefilter.min_similarity > 0 && ` (vibe ≥ ${prefilter.min_similarity.toFixed(2)})`}.
+            A quick screen sent the top <strong>{screen.kept.toLocaleString()}</strong> of{' '}
+            {screen.total.toLocaleString()} names to the judge panel
+            {screen.failed > 0 && ` (${screen.failed.toLocaleString()} could not be screened and were ranked last)`}.
           </p>
         )}
       </div>
@@ -234,12 +235,11 @@ const ResultsTab: React.FC<ResultsTabProps> = ({
             {visible.map((item, index) => {
               const v = item.verdict;
               const isOpen = expanded === item.name;
-              const belowCutoff = !!simCutoff && item.similarity !== undefined && item.similarity < simCutoff;
               return (
                 <React.Fragment key={item.name}>
                   <tr
                     ref={el => { rowRefs.current[item.name] = el; }}
-                    className={`result-row ${index === focus ? 'focused' : ''} ${belowCutoff ? 'dimmed' : ''} ${isOpen ? 'open' : ''}`}
+                    className={`result-row ${index === focus ? 'focused' : ''} ${isOpen ? 'open' : ''}`}
                     onClick={() => { setFocus(index); setExpanded(isOpen ? null : item.name); }}
                   >
                     <td className="col-index">{index + 1}</td>

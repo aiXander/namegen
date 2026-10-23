@@ -41,7 +41,6 @@ camelhair
 camlet
 canvas
 capilene
-carbonfiber
 carrickmacrosslace
 casement
 cashmere
@@ -61,7 +60,6 @@ chino
 chintz
 cloqué
 coir
-conductive
 coolmax
 cordura
 corduroy
@@ -75,7 +73,6 @@ crochet
 crêpebacksatin
 damask
 darlexx
-dazzle
 delainewool
 denim
 dimity
@@ -183,7 +180,6 @@ moquette
 mouflon
 mousseline
 muslin
-naturalfiber
 neoprene
 nomex
 nylon
@@ -207,7 +203,6 @@ polyester
 pongee
 poplin
 qiviut
-quilting
 rakematiz
 raschelknit
 rawsilk
@@ -227,7 +222,6 @@ samite
 sateen
 satin
 saye
-scarlet
 scrim
 seersucker
 sequin
@@ -243,7 +237,6 @@ songket
 spandex
 stockinette
 stubtex
-stuff
 suede
 surah
 sympatex
@@ -269,7 +262,6 @@ velveteen
 venetianlace
 venetianwool
 ventile
-vintage
 viyella
 voile
 wadmal

@@ -1,9 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Play, Sparkles, Gavel, Trophy, Save, FolderOpen, X } from 'lucide-react';
+import { Play, Sparkles, Gavel, Trophy, Save, FolderOpen, X, Dna } from 'lucide-react';
 import {
-  apiService, errorMessage, Config, NameRow, Verdict, FinalEntry, GenerationStats, PrefilterInfo, ModelInfo
+  apiService, errorMessage, Config, NameRow, Verdict, FinalEntry, GenerationStats, ScreenInfo, ModelInfo
 } from './services/api';
-import { formatCost } from './lib/names';
+import { diverseTop, formatCost } from './lib/names';
+import BriefTab from './components/BriefTab';
 import TrainingDataTab from './components/TrainingDataTab';
 import SamplingParametersTab from './components/SamplingParametersTab';
 import ResultsTab from './components/ResultsTab';
@@ -23,13 +24,13 @@ interface Session {
   verdicts: Record<string, Verdict>;
   similarities: Record<string, number>;
   final: Record<string, FinalEntry>;
-  prefilter: PrefilterInfo | null;
+  screen: ScreenInfo | null;
   genStats: GenerationStats | null;
   cost: number;
 }
 
 const EMPTY_SESSION: Session = {
-  rows: [], verdicts: {}, similarities: {}, final: {}, prefilter: null, genStats: null, cost: 0
+  rows: [], verdicts: {}, similarities: {}, final: {}, screen: null, genStats: null, cost: 0
 };
 
 function loadSession(): Session {
@@ -48,14 +49,19 @@ function loadSession(): Session {
   return EMPTY_SESSION;
 }
 
-type Tab = 'sources' | 'sampling' | 'judge' | 'results' | 'shortlist';
+type Tab = 'brief' | 'sources' | 'sampling' | 'judge' | 'results' | 'shortlist';
 type Busy = null | 'vibe' | 'judge' | 'final';
 interface Toast { kind: 'error' | 'info'; text: string }
 
+// Breeding: judged names scoring at least this, plus names rated 4+, become
+// training data for the next round (the gene pool, capped).
+const WINNER_SCORE = 5.5;
+const MAX_WINNERS = 40;
+const MAX_SEEDS = 80;
 const initialSession = loadSession();
 
 function App() {
-  const [tab, setTab] = useState<Tab>(initialSession.rows.length ? 'results' : 'sources');
+  const [tab, setTab] = useState<Tab>(initialSession.rows.length ? 'results' : 'brief');
   const [config, setConfig] = useState<Config>({});
   const [ratings, setRatings] = useState<Record<string, number>>({});
   const [models, setModels] = useState<ModelInfo[]>([]);
@@ -132,6 +138,15 @@ function App() {
     const current = new Set(names);
     return Object.values(session.verdicts).filter(v => v.score !== null && current.has(v.name));
   }, [session.verdicts, names]);
+  const breed = !!config.training_data?.breed;
+  // The gene pool the next round would breed from: your 4-5★ names, this
+  // round's winners, then the pool so far.
+  const genePool = useMemo(() => {
+    const rated = Object.keys(ratings).filter(name => ratings[name] >= 4);
+    const winners = judgedNames.filter(v => (v.score ?? 0) >= WINNER_SCORE)
+      .sort((a, b) => (b.score ?? 0) - (a.score ?? 0)).slice(0, MAX_WINNERS).map(v => v.name);
+    return Array.from(new Set([...rated, ...winners, ...(config.training_data?.seeds || [])])).slice(0, MAX_SEEDS);
+  }, [ratings, judgedNames, config.training_data?.seeds]);
 
   // ------------------------------------------------------------------
   // Pipeline actions
@@ -144,8 +159,11 @@ function App() {
       return;
     }
     setToast(null);
+    // Breeding snapshots the gene pool into the config the run trains on.
+    const next = breed ? { ...config, training_data: { ...config.training_data!, seeds: genePool } } : config;
+    if (next !== config) replaceConfig(next);
     // Flush the config so the CLI / a reload see exactly what was generated from
-    apiService.updateConfig(config).catch(() => undefined);
+    apiService.updateConfig(next).catch(() => undefined);
     setGenerating(true);
   };
 
@@ -165,8 +183,8 @@ function App() {
 
   const vibeRank = async () => {
     if (!keywords) {
-      setToast({ kind: 'error', text: 'Add vibe keywords in the Judge tab — they are what names get ranked against.' });
-      setTab('judge');
+      setToast({ kind: 'error', text: 'Add vibe words in the Brief tab — they are what names get ranked against.' });
+      setTab('brief');
       return;
     }
     setBusy('vibe');
@@ -191,8 +209,8 @@ function App() {
 
   const judge = async () => {
     if (!(llm.description || '').trim()) {
-      setToast({ kind: 'error', text: 'Write a brief in the Judge tab first: what are these names for?' });
-      setTab('judge');
+      setToast({ kind: 'error', text: 'Write the brief first: what are these names for?' });
+      setTab('brief');
       return;
     }
     setBusy('judge');
@@ -205,20 +223,17 @@ function App() {
         guidance: llm.guidance || '',
         judges,
         chunk_size: llm.chunk_size || 20,
-        prefilter_keep: judgeLimit,
-        embedding_model: llm.embedding_model,
-        min_similarity: llm.min_similarity || 0
+        keep: judgeLimit
       }, (phase, done, total) => setProgress({
-        label: phase === 'embedding' ? 'vibe prefilter' : `judging (${judges.length} judge${judges.length > 1 ? 's' : ''})`,
+        label: phase === 'screening' ? 'quick screen' : `judging (${judges.length} judge${judges.length > 1 ? 's' : ''})`,
         done, total
       }));
       const failed = result.verdicts.filter(v => v.score === null).length;
       setSession(prev => ({
         ...prev,
         verdicts: { ...prev.verdicts, ...Object.fromEntries(result.verdicts.map(v => [v.name, v])) },
-        similarities: { ...prev.similarities, ...result.similarities },
         final: {},
-        prefilter: result.prefilter,
+        screen: result.screen,
         cost: prev.cost + result.cost.total
       }));
       setToast(failed
@@ -234,10 +249,8 @@ function App() {
   };
 
   const finalRound = async () => {
-    const shortlist = [...judgedNames]
-      .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
-      .slice(0, finalSize)
-      .map(v => v.name);
+    const shortlist = diverseTop(
+      [...judgedNames].sort((a, b) => (b.score ?? 0) - (a.score ?? 0)).map(v => v.name), finalSize);
     setBusy('final');
     setProgress(null);
     try {
@@ -277,9 +290,10 @@ function App() {
   const shortlistCount = Object.keys(ratings).length;
   const nWords = config.generation?.n_words || 20;
   const tabs: { id: Tab; label: string; step?: number; count?: number }[] = [
-    { id: 'sources', label: 'Sources', step: 1 },
-    { id: 'sampling', label: 'Sampling', step: 2 },
-    { id: 'judge', label: 'Judge', step: 3 },
+    { id: 'brief', label: 'Brief', step: 1 },
+    { id: 'sources', label: 'Sources', step: 2 },
+    { id: 'sampling', label: 'Sampling', step: 3 },
+    { id: 'judge', label: 'Judge', step: 4 },
     { id: 'results', label: 'Results', count: session.rows.length },
     { id: 'shortlist', label: 'Shortlist', count: shortlistCount }
   ];
@@ -309,6 +323,16 @@ function App() {
             title="Sample a fresh batch from the Markov model (⌘/Ctrl+Enter)">
             <Play size={14} /> Generate {nWords.toLocaleString()}
           </button>
+          {(genePool.length > 0 || breed) && (
+            <label className={`breed-toggle ${breed ? 'on' : ''}`}
+              title={`Mix the gene pool (your 4-5★ names + judged names scoring ${WINNER_SCORE}+) into the training data ` +
+                `at ${Math.round((config.training_data?.seed_share ?? 0.2) * 100)}%, so the next round explores ` +
+                `around the winners. Re-spellings of a pool name are rejected.\n\n${genePool.join(', ')}`}>
+              <input type="checkbox" checked={breed}
+                onChange={e => patchConfig('training_data', { breed: e.target.checked })} />
+              <Dna size={13} /> breed from {genePool.length}
+            </label>
+          )}
           <span className="action-arrow">→</span>
           <button className="btn btn-secondary" onClick={vibeRank} disabled={!names.length || !!busy}
             title="Rank every name by embedding similarity to your vibe keywords — near-free, no LLM">
@@ -317,9 +341,9 @@ function App() {
           <span className="action-arrow">→</span>
           <button className="btn btn-primary" onClick={judge} disabled={!names.length || !!busy}
             title={`Score names with the judge panel (${judges.length} model${judges.length > 1 ? 's' : ''})` +
-              (keywords ? `; the vibe prefilter picks the top ${judgeLimit}` : '')}>
+              (names.length > judgeLimit ? `; a quick screen of all ${names.length} picks the top ${judgeLimit}` : '')}>
             {busy === 'judge' ? <span className="loading-spinner-small" /> : <Gavel size={14} />}
-            Judge {keywords ? `top ${Math.min(judgeLimit, names.length || judgeLimit)}` : Math.min(judgeLimit, names.length || judgeLimit)}
+            Judge {names.length > judgeLimit ? `top ${judgeLimit}` : names.length || ''}
           </button>
           <span className="action-arrow">→</span>
           <button className="btn btn-secondary" onClick={finalRound} disabled={judgedNames.length < 2 || !!busy}
@@ -369,6 +393,14 @@ function App() {
       </nav>
 
       <main className="tab-content">
+        {tab === 'brief' && (
+          <BriefTab config={config} patchConfig={patchConfig}
+            onSpend={(usd, text) => {
+              setSession(prev => ({ ...prev, cost: prev.cost + usd }));
+              setToast({ kind: 'info', text });
+            }}
+            onError={text => setToast({ kind: 'error', text })} />
+        )}
         {tab === 'sources' && <TrainingDataTab config={config} patchConfig={patchConfig} />}
         {tab === 'sampling' && <SamplingParametersTab config={config} patchConfig={patchConfig} />}
         {tab === 'judge' && <AITab config={config} patchConfig={patchConfig} models={models} nameCount={names.length} />}
@@ -381,8 +413,7 @@ function App() {
             ratings={ratings}
             onRate={rate}
             genStats={session.genStats}
-            prefilter={session.prefilter}
-            simCutoff={llm.min_similarity}
+            screen={session.screen}
             onGoTo={setTab}
           />
         )}

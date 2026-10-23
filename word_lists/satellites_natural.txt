@@ -35,7 +35,6 @@ despina
 dia
 dione
 dysnomia
-earth
 elara
 enceladus
 erinome
@@ -74,7 +73,6 @@ isonoe
 janus
 jarnsaxa
 juliet
-jupiter
 kale
 kallichore
 kalyke
@@ -89,9 +87,7 @@ loge
 lysithea
 mab
 margaret
-mars
 megaclite
-mercury
 methone
 metis
 mimas
@@ -101,7 +97,6 @@ mundilfari
 naiad
 namaka
 narvi
-neptune
 nereid
 neso
 oberon
@@ -116,7 +111,6 @@ pasithee
 perdita
 phobos
 phoebe
-pluto
 polydeuces
 portia
 praxidike
@@ -128,7 +122,6 @@ puck
 rhea
 rosalind
 sao
-saturn
 setebos
 siarnaq
 sinope
@@ -156,7 +149,5 @@ titania
 trinculo
 triton
 umbriel
-uranus
-venus
 xi
 ymir

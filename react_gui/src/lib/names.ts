@@ -34,6 +34,35 @@ export function compareBest(a: ResultItem, b: ResultItem): number {
   return (b.naturalness ?? -1) - (a.naturalness ?? -1);
 }
 
+/** Levenshtein similarity in [0, 1] (1 = identical). */
+function similarity(a: string, b: string): number {
+  if (a === b) return 1;
+  let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    const row = [i];
+    for (let j = 1; j <= b.length; j++) {
+      row[j] = Math.min(prev[j] + 1, row[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    }
+    prev = row;
+  }
+  return 1 - prev[b.length] / Math.max(a.length, b.length);
+}
+
+// Names at least this similar are re-spellings of each other ("murmurata" /
+// "murmurat", "koino" / "koinoo"): one is enough in a shortlist.
+const NEAR_DUPLICATE = 0.75;
+
+/** The first `n` names of a best-first list, skipping near-duplicates of a
+ *  name already taken, so the final round compares ideas, not spellings. */
+export function diverseTop(names: string[], n: number): string[] {
+  const picked: string[] = [];
+  for (const name of names) {
+    if (picked.length >= n) break;
+    if (!picked.some(p => similarity(p, name) >= NEAR_DUPLICATE)) picked.push(name);
+  }
+  return picked;
+}
+
 export function downloadCsv(items: ResultItem[], filename = 'names.csv') {
   const escape = (value: unknown) => {
     const text = value === undefined || value === null ? '' : String(value);

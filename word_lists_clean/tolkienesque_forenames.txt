@@ -1,6 +1,6 @@
 abattarik
-ada
 adalgrim
+adanedhel
 adanel
 adrahil
 adunakhor
@@ -28,9 +28,9 @@ anaire
 anardil
 anarion
 anborn
-anca
 ancalagon
 ancalime
+ancalimon
 andrast
 andreth
 androg
@@ -96,7 +96,6 @@ bereg
 beregond
 beren
 bergil
-berry
 bert
 beruthiel
 berylla
@@ -124,18 +123,17 @@ calembel
 calimehtar
 calion
 calmacil
-car
 caranthir
+carcharoth
 castamir
 celeborn
-celebr
+celebrian
 celebrimbor
 celebrindor
 celegorm
 celepharn
 cemendur
 ceorl
-cha
 cirdan
 cirion
 ciryaher
@@ -215,7 +213,6 @@ falassion
 faniel
 faramir
 fastred
-fax
 feanor
 felarof
 fengel
@@ -261,7 +258,7 @@ glaurung
 gloin
 gloredhel
 glorfindel
-gold
+goldberry
 goldwine
 golfimbul
 gollum
@@ -291,12 +288,11 @@ hama
 handir
 hardang
 hareth
-hel
 helm
-her
 herion
 herucalmo
 herumor
+herunumen
 hirgon
 hiril
 hostamir
@@ -305,7 +301,6 @@ hundar
 huor
 hurin
 hyarmendacil
-ian
 ibun
 idril
 ilmare
@@ -337,7 +332,6 @@ lalaith
 legolas
 lenwe
 leod
-limon
 lindir
 lobelia
 lotho
@@ -360,7 +354,6 @@ marach
 mauhur
 meleth
 melian
-men
 meneldil
 meneldur
 meriadoc
@@ -380,7 +373,6 @@ nain
 namo
 narmacil
 narvi
-ned
 nerdanel
 nessa
 nienna
@@ -414,10 +406,8 @@ pervinca
 pharazon
 primula
 radagast
-rap
 rian
 romendacil
-roth
 rumil
 sador
 saeros
@@ -427,7 +417,7 @@ salmar
 saruman
 sauron
 scatha
-shadow
+shadowfax
 shagrat
 shelob
 silmarien
@@ -479,7 +469,6 @@ ulwarth
 umbardacil
 undomiel
 ungoliant
-unu
 uole
 urwen
 vaire
@@ -499,5 +488,5 @@ walda
 wormtongue
 yavanna
 yavien
-zim
+zimraphel
 zimrathon

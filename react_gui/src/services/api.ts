@@ -27,11 +27,25 @@ export interface WordListContent {
 
 export type Weighting = 'natural' | 'balanced' | 'rating';
 
+/** A real word evoking the brief, mixed into the Markov training data. */
+export interface LexiconEntry {
+  word: string;
+  lang?: string;
+  meaning?: string;
+}
+
 export interface Config {
   training_data?: {
     sources: string[];
     weighting?: Weighting;
     score_range?: { min: number; max: number };
+    /** Brief lexicon and its share (0-0.9) of the training mass */
+    lexicon?: LexiconEntry[];
+    lexicon_share?: number;
+    /** Breeding: earlier winners mixed into the training data when `breed` is on */
+    breed?: boolean;
+    seeds?: string[];
+    seed_share?: number;
   };
   model?: {
     order: number;
@@ -66,7 +80,6 @@ export interface Config {
     final_size?: number;
     chunk_size?: number;
     embedding_model?: string;
-    min_similarity?: number;
     available_models?: string[];
   };
   ai_settings?: {
@@ -116,18 +129,18 @@ export interface FinalEntry {
   concern: string;
 }
 
-export interface PrefilterInfo {
+/** The quick screen that picked which names got a full verdict. */
+export interface ScreenInfo {
   total: number;
   kept: number;
-  min_similarity: number;
+  failed: number;
 }
 
 export interface JudgeResult {
   verdicts: Verdict[];
-  similarities: Record<string, number>;
-  prefilter: PrefilterInfo | null;
+  screen: ScreenInfo | null;
   judges: string[];
-  cost: { embedding: number; judging: number; total: number };
+  cost: { screen: number; judging: number; total: number };
 }
 
 export interface JudgeRequest {
@@ -137,9 +150,8 @@ export interface JudgeRequest {
   guidance: string;
   judges: string[];
   chunk_size: number;
-  prefilter_keep: number;
-  embedding_model?: string;
-  min_similarity?: number;
+  /** names that get a full verdict; above this the quick screen picks them */
+  keep: number;
 }
 
 export interface ModelInfo {
@@ -279,16 +291,26 @@ class ApiService {
     });
   }
 
-  /** Vibe prefilter (when keywords are set) then the judge panel; reports
-   *  'embedding' progress (texts) then 'judging' progress (LLM chunks). */
+  /** Quick screen (when there are more names than `keep`) then the judge
+   *  panel; reports 'screening' then 'judging' progress (LLM chunks). */
   judgeStream(
     request: JudgeRequest,
-    onProgress: (phase: 'embedding' | 'judging', done: number, total: number) => void
+    onProgress: (phase: 'screening' | 'judging', done: number, total: number) => void
   ): Promise<JudgeResult> {
     return streamSSE('/ai/judge-stream', request, (event) => {
-      if (event.type === 'embed_progress') onProgress('embedding', event.done, event.total);
+      if (event.type === 'screen_progress') onProgress('screening', event.done, event.total);
       else if (event.type === 'judge_progress') onProgress('judging', event.done, event.total);
     });
+  }
+
+  /** Real words evoking the brief; `exclude` asks for fresh ones. */
+  async lexicon(request: {
+    description: string;
+    keywords: string;
+    guidance: string;
+    exclude: string[];
+  }): Promise<{ words: LexiconEntry[]; cost: number }> {
+    return (await axios.post(`${this.baseURL}/ai/lexicon`, request)).data;
   }
 
   async finalRound(request: {

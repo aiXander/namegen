@@ -1,10 +1,12 @@
-"""Embedding-based pre-filtering of generated names against keyword "anchors".
+"""Embedding "vibe" ranking of generated names against keyword "anchors".
 
 Embeds a handful of user-supplied vibe/meaning keywords plus all candidate
 names via OpenRouter's embeddings endpoint, then ranks names by cosine
-similarity to the anchors. This is a cheap pre-filter stage that lets us
-generate far more Markov samples and only send the most on-vibe ones to the
-(much more expensive) LLM scorer.
+similarity to the anchors. Near-free, but a weak signal: on nonce words the
+similarity tracks shared letters more than meaning (Spearman ~0.1 with the
+judge panel's score, measured 2026-10). That is why it no longer gates which
+names get judged (the quick screen in ai/judge.py does); it only fills the
+GUI's Vibe column on demand.
 
 Scoring rule: for each name, the anchor similarities are aggregated with a
 softmax-weighted average: score = sum_i softmax(sims / tau)_i * sims_i.
@@ -266,34 +268,3 @@ class EmbeddingPrefilter:
         cost = self.cost_tracker.get_total_cost() - initial_cost
         return (ranked, cost)
 
-
-def prefilter_names(
-    names: List[str],
-    keywords: List[str],
-    keep_top: int,
-    model: str = DEFAULT_EMBEDDING_MODEL,
-    cache_dir: str = ".cache",
-    min_similarity: float = 0.0,
-    progress_callback: Optional[ProgressCallback] = None,
-) -> Dict[str, Any]:
-    """Convenience wrapper: rank names against keyword anchors and keep the top N.
-
-    ``min_similarity`` additionally drops names below that similarity cutoff
-    (0 disables it), so the LLM never sees clearly off-vibe candidates even
-    when fewer than ``keep_top`` names remain.
-
-    Returns {kept: [(name, sim)], ranked: [(name, sim)] for ALL names,
-    dropped: int, total: int, cost: float}. ``ranked`` is included so callers
-    can keep reporting similarities for names the filter dropped.
-    """
-    prefilter = EmbeddingPrefilter(model=model, cache_dir=cache_dir)
-    ranked, cost = prefilter.rank_names(names, keywords, progress_callback=progress_callback)
-    keep_top = max(1, int(keep_top))
-    kept = [(n, s) for n, s in ranked[:keep_top] if s >= min_similarity]
-    return {
-        "kept": kept,
-        "ranked": ranked,
-        "dropped": len(ranked) - len(kept),
-        "total": len(ranked),
-        "cost": cost,
-    }

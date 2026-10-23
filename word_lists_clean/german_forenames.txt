@@ -9,7 +9,6 @@ alfred
 alina
 almut
 alois
-alvin
 alwin
 amalia
 amelia
@@ -17,7 +16,8 @@ andrea
 andreas
 angelika
 anna
-anne
+annaliese
+anneliese
 annelise
 ansgar
 anton
@@ -48,9 +48,6 @@ christel
 christian
 christof
 claudia
-colby
-colton
-corey
 corina
 dagmar
 dagobert
@@ -61,8 +58,6 @@ diedrich
 dieter
 dieterich
 dietrich
-donald
-dustin
 edith
 edmund
 eilhard
@@ -73,13 +68,11 @@ elmar
 elsa
 emil
 emilie
-emily
 emma
 emmerich
 erhard
 eric
 erika
-estelle
 esther
 eva
 ewald
@@ -123,9 +116,8 @@ hanne
 hannelore
 hans
 harald
-harold
 hedy
-heide
+heidemarie
 heidi
 heiner
 heini
@@ -150,7 +142,6 @@ hilma
 holger
 horst
 hubert
-hunter
 ilona
 imelda
 ingo
@@ -161,8 +152,6 @@ isabella
 jacob
 jacqueline
 jana
-jermaine
-jerome
 joachim
 johann
 johanna
@@ -184,7 +173,6 @@ katja
 katrin
 katya
 kerstin
-kevin
 klaus
 konrad
 kurt
@@ -193,13 +181,11 @@ lars
 lena
 levin
 liana
-liese
 liesl
 lina
 lisbeth
 lorentz
 lothar
-louella
 louise
 ludwig
 lukas
@@ -214,7 +200,6 @@ marcus
 margarete
 maria
 marianne
-marie
 marina
 mario
 marius
@@ -225,7 +210,6 @@ matthias
 maximilian
 medard
 meinrad
-melvin
 michaela
 michel
 michelle
@@ -246,7 +230,6 @@ nicolaus
 nicole
 nikola
 nina
-nivaldo
 olaf
 olga
 olivia
@@ -265,7 +248,6 @@ rachel
 rainer
 ralph
 ramona
-randall
 reinhard
 reinhold
 richard
@@ -273,10 +255,8 @@ richenza
 robert
 roberta
 robin
-roger
 rolf
 roman
-ronald
 rosina
 rudolph
 rut
@@ -287,12 +267,10 @@ sandra
 sebastian
 selma
 severin
-sheryl
 siegfried
 sigismund
 sigmund
 stefania
-stephen
 susanne
 sven
 svenja
@@ -322,10 +300,8 @@ wernher
 wiebke
 wilhelm
 wilhelmina
-william
 wiltrud
 winfried
 wolf
 wolfgang
 xenia
-yvette

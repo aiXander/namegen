@@ -73,6 +73,62 @@ def source_weights(sizes: Dict[str, int], mode: str,
     return {source: total_words * share[source] / total_share / sizes[source] for source in sizes}
 
 
+# Extra training words that aren't word lists: the brief lexicon (real words
+# that carry the brief's meaning, see ai/lexicon.py) and, when breeding, the
+# winners of earlier rounds. Each gets a fixed share of the total training
+# mass; the word lists keep the rest. Measured on one brief (2026-10), a 50%
+# lexicon doubled the names the judges rated >= 5 and breeding added ~30% more.
+DEFAULT_LEXICON_SHARE = 0.5
+DEFAULT_SEED_SHARE = 0.2
+MAX_EXTRA_SHARE = 0.9
+# Names this close (Levenshtein) to a seed are re-spellings of a name the user
+# has already seen, not new candidates.
+MIN_SEED_DISTANCE = 2
+# 'mind of us' breeds from 'mind'; 'of' and 'us' are filler, not winners.
+SEED_MIN_LENGTH = 3
+
+
+def as_words(entries: Iterable, min_length: int = 2) -> List[str]:
+    """Lexicon entries ({word, ...} or plain strings) or seed names -> unique
+    lowercase single words (multi-word seeds are split, fragments shorter than
+    `min_length` dropped)."""
+    words: List[str] = []
+    for entry in entries or []:
+        text = entry.get("word", "") if isinstance(entry, dict) else str(entry)
+        words += [w for w in text.lower().split() if w.isalpha() and len(w) >= min_length]
+    return list(dict.fromkeys(words))
+
+
+def extra_sources(training_config: dict) -> List[Tuple[List[str], float]]:
+    """[(words, share)] for the lexicon and (when breeding) the seeds."""
+    extras = []
+    lexicon = as_words(training_config.get("lexicon"))
+    lexicon_share = float(training_config.get("lexicon_share", DEFAULT_LEXICON_SHARE) or 0)
+    if lexicon and lexicon_share > 0:
+        extras.append((lexicon, lexicon_share))
+    seeds = as_words(training_config.get("seeds"), SEED_MIN_LENGTH) if training_config.get("breed") else []
+    seed_share = float(training_config.get("seed_share", DEFAULT_SEED_SHARE) or 0)
+    if seeds and seed_share > 0:
+        extras.append((seeds, seed_share))
+    total = sum(share for _, share in extras)
+    if total > MAX_EXTRA_SHARE:  # the word lists always keep some say
+        extras = [(words, share * MAX_EXTRA_SHARE / total) for words, share in extras]
+    return extras
+
+
+def mix_extra_words(words: List[str], weights: List[float],
+                    extras: List[Tuple[List[str], float]]) -> Tuple[List[str], List[float]]:
+    """Append each extra word set so it holds exactly its share of the total
+    training mass (the base words keep 1 - sum of shares)."""
+    base_share = 1.0 - sum(share for _, share in extras)
+    base_mass = sum(weights) or 1.0
+    words, weights = list(words), list(weights)
+    for extra, share in extras:
+        weights += [share / base_share * base_mass / len(extra)] * len(extra)
+        words += extra
+    return words, weights
+
+
 class MarkovNameGenerator:
     def __init__(self, config_path: str = "config.yaml", config: Optional[dict] = None):
         """Train a generator from a config dict, or from the YAML at config_path."""
@@ -116,7 +172,8 @@ class MarkovNameGenerator:
                                    self.config.get('word_list_ratings'))
         words = [word for source_words in per_source.values() for word in source_words]
         weights = [weight_of[source] for source, source_words in per_source.items() for _ in source_words]
-        return words, weights
+        self.seed_words = as_words(training_config.get('seeds'), SEED_MIN_LENGTH) if training_config.get('breed') else []
+        return mix_extra_words(words, weights, extra_sources(training_config))
     
     def generate_names(self) -> List[str]:
         """Generate names according to configuration"""
@@ -185,7 +242,11 @@ class MarkovNameGenerator:
                 name for name in filtered_names
                 if not too_close_to_training(name, unique_training, min_distance)
             ]
-        
+
+        if self.seed_words:
+            filtered_names = [name for name in filtered_names
+                              if not too_close_to_training(name, self.seed_words, MIN_SEED_DISTANCE)]
+
         return filtered_names
     
     def _sort_names(self, names: List[str]) -> List[str]:

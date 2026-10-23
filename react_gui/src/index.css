@@ -1845,3 +1845,54 @@ details.advanced summary {
 .modal-content {
   min-width: min(520px, 90vw);
 }
+
+.lexicon-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  max-height: 340px;
+  overflow-y: auto;
+}
+
+.lexicon-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 4px 2px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--border-strong);
+  background: rgba(0, 0, 0, 0.2);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--text-secondary);
+  cursor: help;
+}
+
+.lexicon-chip button {
+  display: inline-flex;
+  padding: 2px;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.lexicon-chip button:hover {
+  color: var(--error-color);
+  background: var(--bg-hover);
+}
+
+.breed-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-muted);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.breed-toggle.on {
+  color: var(--accent-secondary);
+}

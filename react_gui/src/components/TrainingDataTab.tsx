@@ -68,16 +68,27 @@ const TrainingDataTab: React.FC<TrainingDataTabProps> = ({ config, patchConfig }
       });
   }, [wordLists, query, minHealth, sortColumn, sortDesc]);
 
-  // Share of the training statistics each selected list ends up with
+  // Share of the training statistics each selected list ends up with, after
+  // the brief lexicon and the breeding gene pool take their fixed shares
+  // (mirrors extra_sources() in markov_namegen.py, incl. the 90% cap).
+  const training = config.training_data;
   const mix = useMemo(() => {
+    const extras = [
+      { name: 'Brief lexicon', share: training?.lexicon?.length ? training.lexicon_share ?? 0.5 : 0 },
+      { name: 'Gene pool', share: training?.breed && training.seeds?.length ? training.seed_share ?? 0.2 : 0 }
+    ].filter(e => e.share > 0);
+    const extraTotal = extras.reduce((sum, e) => sum + e.share, 0);
+    const scale = extraTotal > 0.9 ? 0.9 / extraTotal : 1;
+    const listShare = 1 - extraTotal * scale;
     const chosen = wordLists.filter(wl => selected.includes(wl.filename) && wl.word_count > 0);
     const weight = (wl: WordList) =>
       weighting === 'natural' ? wl.word_count : weighting === 'balanced' ? 1 : (wl.rating || UNRATED_STARS);
     const total = chosen.reduce((sum, wl) => sum + weight(wl), 0);
-    return chosen
-      .map(wl => ({ name: wl.display_name, share: total ? weight(wl) / total : 0 }))
-      .sort((a, b) => b.share - a.share);
-  }, [wordLists, selected, weighting]);
+    return [
+      ...extras.map(e => ({ name: e.name, share: e.share * scale })),
+      ...chosen.map(wl => ({ name: wl.display_name, share: total ? listShare * weight(wl) / total : 0 }))
+    ].sort((a, b) => b.share - a.share);
+  }, [wordLists, selected, weighting, training]);
 
   const totalWords = wordLists.filter(wl => selected.includes(wl.filename)).reduce((s, wl) => s + wl.word_count, 0);
 

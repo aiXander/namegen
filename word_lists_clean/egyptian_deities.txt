@@ -18,7 +18,6 @@ ash
 astarte
 aten
 atum
-awy
 baal
 baalatgebal
 babi
@@ -49,7 +48,6 @@ imhotep
 ishtar
 isis
 iusaaset
-kau
 khepri
 kherty
 khnum
@@ -64,15 +62,14 @@ mehit
 menhit
 meretseger
 meskhenet
-met
 min
 mnevis
 montu
 mut
 nebethetepet
 nefertum
-neh
 nehebukau
+nehmetawy
 neith
 nekhbet
 neper
@@ -107,7 +104,6 @@ tatenen
 taweret
 tefnut
 tenenet
-the
 thoth
 tutu
 unut
@@ -115,6 +111,6 @@ wadjet
 wadjwer
 weneg
 wepwawet
-were
+werethekau
 wosret
 yam

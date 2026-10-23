@@ -3,13 +3,11 @@ angolar
 argentino
 austral
 baht
-bitcoin
 bolivar
 boliviano
 colon
 cordoba
 cupon
-dime
 dinar
 diner
 dinero
@@ -17,6 +15,7 @@ dinheiro
 dirham
 dobra
 dollar
+dong
 drachma
 dram
 escudo
@@ -38,7 +37,6 @@ guilder
 gulden
 hryvnia
 hwan
-inca
 karbovanets
 keping
 kolion
@@ -71,14 +69,11 @@ metical
 mohar
 mon
 mun
-newpence
-ong
 ostmark
 ostruble
 paisa
 peseta
 peso
-phoenix
 piastra
 piastre
 pitis
@@ -115,12 +110,11 @@ sol
 som
 somalo
 somoni
-specie
 speciedaler
+speciethaler
 sucre
 tenge
 thaler
-trade
 vatu
 venezolano
 vereinsthaler
@@ -129,4 +123,4 @@ won
 yang
 yen
 yuan
-zoty
+zloty

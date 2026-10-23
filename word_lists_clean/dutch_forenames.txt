@@ -84,12 +84,10 @@ dirk
 dirkje
 edgar
 eduard
-eli
 eliene
 eline
 esmee
 esther
-eve
 evert
 folkert
 francis
@@ -100,7 +98,7 @@ gerardus
 gerrit
 gert
 gijs
-god
+godelieve
 goedele
 goele
 gudula

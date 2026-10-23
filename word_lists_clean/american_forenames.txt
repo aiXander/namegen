@@ -325,8 +325,8 @@ ivan
 jack
 jackie
 jacob
-jacque
 jacqueline
+jacquelyn
 jaime
 james
 jamie
@@ -345,6 +345,7 @@ jay
 jean
 jeanette
 jeanne
+jeannette
 jeannie
 jeff
 jeffery
@@ -486,7 +487,6 @@ luis
 lula
 luz
 lydia
-lyn
 lynda
 lynette
 lynn
@@ -650,6 +650,7 @@ ronnie
 rosa
 rosalie
 rose
+rosemarie
 rosemary
 rosie
 ross
@@ -744,7 +745,6 @@ tracy
 travis
 tricia
 troy
-tte
 tyler
 tyrone
 valerie

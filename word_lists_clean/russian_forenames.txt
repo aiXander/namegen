@@ -65,7 +65,7 @@ avenira
 aventin
 aventina
 averky
-aves
+avessalom
 avgar
 avgury
 avgust
@@ -207,7 +207,6 @@ roman
 rostislav
 ruslan
 rustem
-salom
 sambor
 snezana
 sobieslaw

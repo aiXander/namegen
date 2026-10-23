@@ -133,7 +133,7 @@ dayana
 debora
 delia
 derque
-desam
+desamparados
 diana
 diego
 dionisia
@@ -142,7 +142,6 @@ dolores
 dominga
 domingo
 dorotea
-dos
 echedey
 edgar
 edgardo
@@ -275,6 +274,7 @@ joaquin
 joaquina
 jonay
 jorge
+jorgelina
 jose
 josefa
 josefina
@@ -306,7 +306,6 @@ lia
 lidia
 lilia
 liliana
-lina
 lope
 lorena
 lorenza
@@ -384,7 +383,6 @@ oswaldo
 pablito
 pablo
 paqui
-para
 pascual
 pascuala
 patricia

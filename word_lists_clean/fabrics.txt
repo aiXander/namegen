@@ -42,7 +42,6 @@ camel
 camlet
 canvas
 capilene
-carbon
 carrick
 casement
 cashmere
@@ -66,7 +65,6 @@ cloque
 cloth
 coir
 con
-conductive
 coolmax
 cord
 cordura
@@ -81,7 +79,6 @@ crinoline
 crochet
 damask
 darlexx
-dazzle
 delainewool
 denim
 dimity
@@ -107,7 +104,6 @@ faille
 fauxfur
 felt
 ffe
-fiber
 fibre
 fishnet
 flannel
@@ -207,7 +203,6 @@ mouflon
 mousse
 muslin
 nadine
-natural
 needle
 neoprene
 netting
@@ -233,7 +228,6 @@ polyester
 pongee
 poplin
 qiviut
-quilting
 rakematiz
 ras
 rawsilk
@@ -254,7 +248,6 @@ sar
 sateen
 satin
 saye
-scarlet
 scrim
 seersucker
 sequin
@@ -273,7 +266,6 @@ spandex
 stockinette
 stopper
 stubtex
-stuff
 suede
 surah
 sympatex
@@ -301,7 +293,6 @@ velvet
 velveteen
 venetian
 ventile
-vintage
 viyella
 voile
 wadmal
