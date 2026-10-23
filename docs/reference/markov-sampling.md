@@ -78,35 +78,47 @@ components the training data could never produce. `includes` still steers the
 gap-filling (same guide-token boost as single-word mode); correctness is the
 posterior `_validate`'s job either way.
 
-## Multi-word mode (a space in `includes`)
+## Multi-word mode (`generation.word_counts`)
+
+`word_counts` is the list of allowed word counts (GUI: "Words per name"
+checkboxes 1/2/3, at least one always ticked). `allowed_word_counts()` in
+`constraint_sampler.py` parses it; **unset falls back to the old switch** — a
+space in `includes` meant two words — so pre-setting configs keep sampling what
+they used to (`[2]` if `includes` has a space, else `[1]`; the GUI mirrors this
+default). Otherwise a space in `includes` means nothing and is stripped
+(a trailing space copied in with `'co' ` silently forced two words — the
+reason the setting exists).
+
+Each attempt, `NameGenerator._pick_word_count` picks one count uniformly from
+the allowed counts that fit `max_length` (`feasible_word_counts`: k words need
+`3k - 1` chars). The mix of the output therefore also reflects per-count
+success rates. None fit → infeasible (fast `[]`, and an SSE error in the API).
 
 The model's alphabet has **no space** (cleaned word lists are one word per
-line), so the constraint sampler can never *emit* a space — that's why
-`includes=' '` used to silently return nothing (the space was also stripped by
-`GenerationConstraints.__post_init__`/`parse_includes_groups`). Two-word output
-is therefore handled by the component sampler, which *places literals*:
+line), so the constraint sampler can never *emit* one. Multi-word attempts go
+through the component sampler, which *places literals*:
 
-- A space in `includes` sets `ComponentConstraints.word_breaks` (one break →
-  two words) and is stripped from the includes tokens (`'co '` → token `co` +
-  one break). `NameGenerator.generate_name` reroutes any space-bearing
-  `includes` to the component path and skips the single-word fallback (which
-  could never produce the space).
-- `_insert_separators` drops `word_breaks` literal `" "` parts at interior
-  slots of the arrangement (never two adjacent → never an empty word).
+- `word_breaks = k - 1` is passed explicitly into `ComponentConstraints`
+  (also on the fixed-components path). `generate_name` skips the single-word
+  fallback for these (it could never produce a space).
+- `_insert_separators` drops `word_breaks` literal `" "` parts at random slots,
+  adjacent ones included — the gap minimums below turn the gap between two
+  separators into a real word (this is what makes 3+ words work).
 - Building across a separator **resets the Markov context to fresh
   `#`-padding** — each space starts a brand-new word, so word 2 is sampled as a
   word-initial Markov walk, not as a continuation of word 1. Junction
   plausibility is skipped *into* a space (the model has no transition for it)
   but still enforced when a real part begins the next word.
-- `MIN_WORD_LEN` (2) is forced on each side of every break via the gap minimums
+- `MIN_WORD_LEN` (2, in `constraint_sampler.py`) is forced on each side of
+  every break via the gap minimums, counting an adjacent fixed part's letters,
   so you never get `x noda`. `_validate` re-checks: exactly `word_breaks`
   spaces, no empty word, and the usual length/`includes`/`ends_with`/excludes
   over the whole joined string.
 
-Worked example: `includes='co ' + ends_with='a'` → fixed parts `[" ", "a"]`,
-word 1 = a guided gap (lands `co`), word 2 = gap + pinned `a` → `code noda`,
-`temp coa`. Note the space counts toward length — bump `max_length` (a 2+2
-two-word name needs ≥5).
+Worked example: `word_counts=[2]`, `includes='co'`, `ends_with='a'` → fixed
+parts `[" ", "a"]`, gaps guided toward `co` → `code noda`, `temp coa`. The
+spaces count toward length; short `max_length` with 3 words yields 2-letter
+fragments (`cor sh gaba`).
 
 ## Source weighting (`training_data.weighting`)
 
@@ -196,6 +208,7 @@ would add overhead, not speed.
   unique-name yield per constraint combo. Reference numbers (2026-06, ~22k
   training words): plain ~99%, `ends_with=a` ~92%, `includes=co` ~41%,
   `includes=co+ends_with=a` ~35%, components ~100%. Multi-word (~7.5k cleaned
-  words): `includes=' '` ~100%, `+ends_with=a` ~75%, `'co '+ends_with=a` ~19%.
+  words): two words ~100%, `+ends_with=a` ~71%, `+includes=co+ends_with=a` ~36%;
+  three words `+ends_with=a` (8–14 chars) ~76%.
   Note: the benchmark reads `config.yaml` for training sources, which the GUI
   mutates — pin sources when comparing runs.

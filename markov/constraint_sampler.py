@@ -46,6 +46,28 @@ def dequote(text: str) -> str:
     return "".join(ch for ch in text if ch not in _QUOTE_CHARS)
 
 
+# Each word of a multi-word name gets at least this many letters, so k words
+# need k * MIN_WORD_LEN letters plus k - 1 spaces.
+MIN_WORD_LEN = 2
+
+
+def allowed_word_counts(word_counts, includes: str = "") -> List[int]:
+    """The `generation.word_counts` setting as a sorted list of ints >= 1.
+
+    Unset falls back to the pre-setting behaviour, where a space in `includes`
+    meant two-word output — so old configs keep sampling what they used to."""
+    counts = sorted({int(n) for n in word_counts or [] if int(n) >= 1})
+    if counts:
+        return counts
+    return [2] if " " in (includes or "") else [1]
+
+
+def feasible_word_counts(word_counts, includes: str, max_length: int) -> List[int]:
+    """The allowed word counts whose minimum spelling fits in `max_length`."""
+    return [k for k in allowed_word_counts(word_counts, includes)
+            if k * MIN_WORD_LEN + (k - 1) <= max_length]
+
+
 def parse_includes_groups(includes_pattern: str) -> List[List[str]]:
     """Parse an includes pattern into OR-groups of AND-tokens.
 
@@ -89,7 +111,9 @@ class GenerationConstraints:
         (users copy the quotes from the GUI's quoted examples)."""
         self.starts_with = dequote(self.starts_with).strip().lower()
         self.ends_with = dequote(self.ends_with).strip().lower()
-        self.includes = dequote(self.includes).strip().lower()
+        # Spaces carry no meaning here (word count is its own setting), and a
+        # stray one would otherwise become part of a token no name can contain.
+        self.includes = dequote(self.includes).replace(" ", "").lower()
         self.excludes = dequote(self.excludes).strip().lower()
 
     def includes_groups(self) -> List[List[str]]:

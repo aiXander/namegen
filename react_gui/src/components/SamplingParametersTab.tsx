@@ -10,6 +10,7 @@ interface SamplingParametersTabProps {
 
 const MAX_LEN = 24;
 const PREVIEW_SIZE = 18;
+const WORD_COUNTS = [1, 2, 3];
 
 const parseList = (text: string) => text.split(',').map(t => t.trim()).filter(Boolean);
 const parseInts = (text: string) => parseList(text).map(Number).filter(n => Number.isInteger(n));
@@ -43,6 +44,13 @@ const SamplingParametersTab: React.FC<SamplingParametersTabProps> = ({ config, p
   const setGen = (patch: Partial<NonNullable<Config['generation']>>) => patchConfig('generation', patch);
   const setFilters = (patch: Partial<NonNullable<Config['filtering']>>) => patchConfig('filtering', patch);
   const hasComponents = !!gen.components?.length;
+  // Unset = the old behaviour, where a space in Includes meant two words
+  // (mirrors allowed_word_counts in markov/constraint_sampler.py).
+  const wordCounts = gen.word_counts?.length ? gen.word_counts : gen.includes.includes(' ') ? [2] : [1];
+  const toggleWordCount = (n: number) => {
+    const next = wordCounts.includes(n) ? wordCounts.filter(c => c !== n) : [...wordCounts, n].sort((a, b) => a - b);
+    if (next.length) setGen({ word_counts: next });
+  };
 
   // Live preview: re-sample a handful of names whenever anything that shapes
   // them changes (debounced; a newer preview aborts the stale one).
@@ -130,10 +138,7 @@ const SamplingParametersTab: React.FC<SamplingParametersTabProps> = ({ config, p
               <label className="form-label">Includes</label>
               <input className="form-input" value={gen.includes} placeholder="e.g. co · an,er · tech;bio"
                 onChange={e => setGen({ includes: e.target.value })} />
-              <p className="field-help">
-                <code>a,b</code> both · <code>a;b</code> either · a <strong>space</strong> makes two words
-                (<code>co </code> + ends with <code>a</code> → “code noda”)
-              </p>
+              <p className="field-help"><code>a,b</code> both · <code>a;b</code> either</p>
             </div>
             <div className="form-group">
               <label className="form-label">Excludes</label>
@@ -141,6 +146,22 @@ const SamplingParametersTab: React.FC<SamplingParametersTabProps> = ({ config, p
                 onChange={e => setGen({ excludes: e.target.value })} />
               <p className="field-help">Comma-separated substrings that may never appear.</p>
             </div>
+          </div>
+
+          <div className="form-group mt-4">
+            <label className="form-label">Words per name</label>
+            <div className="toggle-row">
+              {WORD_COUNTS.map(n => (
+                <label key={n} className="checkbox-container">
+                  <input type="checkbox" checked={wordCounts.includes(n)} onChange={() => toggleWordCount(n)} />
+                  <span>{n}</span>
+                </label>
+              ))}
+            </div>
+            <p className="field-help">
+              Each sample picks one of the ticked counts; constraints apply to the whole name
+              (2 words + ends with <code>a</code> → “code noda”). Length includes the spaces.
+            </p>
           </div>
 
           <details className="advanced" open={hasComponents}>

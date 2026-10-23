@@ -42,12 +42,14 @@ CASES = [
     ("includes OR: co;mi + excludes=an", {}, {"includes": "co;mi", "excludes": "an"}),
     ("ends_with=a, no backoff", {"backoff": False}, {"ends_with": "a"}),
     ("ends_with=ra + min8", {}, {"ends_with": "ra", "min_length": 8}),
-    # Multi-word: a space in `includes` routes through the component sampler
-    ("two-word: includes=' '", {}, {"includes": " ", "min_length": 5, "max_length": 10}),
-    ("two-word: includes=' ' + ends_with=a", {}, {"includes": " ", "ends_with": "a",
-                                                   "min_length": 5, "max_length": 10}),
-    ("two-word: includes='co ' + ends_with=a", {}, {"includes": "co ", "ends_with": "a",
-                                                     "min_length": 5, "max_length": 11}),
+    # Multi-word (`word_counts`) routes through the component sampler
+    ("two-word", {}, {"word_counts": [2], "min_length": 5, "max_length": 10}),
+    ("two-word + ends_with=a", {}, {"word_counts": [2], "ends_with": "a",
+                                    "min_length": 5, "max_length": 10}),
+    ("two-word + includes=co + ends_with=a", {}, {"word_counts": [2], "includes": "co", "ends_with": "a",
+                                                  "min_length": 5, "max_length": 11}),
+    ("three-word + ends_with=a", {}, {"word_counts": [3], "ends_with": "a",
+                                      "min_length": 8, "max_length": 14}),
 ]
 
 COMPONENT_CASES = [
@@ -73,7 +75,8 @@ def run_case(gen, label, kwargs, attempts, component_mode=False):
                                      starts_with=kwargs.get("starts_with", ""),
                                      ends_with=kwargs.get("ends_with", ""),
                                      includes=kwargs.get("includes", ""),
-                                     excludes=kwargs.get("excludes", ""))
+                                     excludes=kwargs.get("excludes", ""),
+                                     word_counts=kwargs.get("word_counts"))
         if name:
             successes += 1
             names.add(name)

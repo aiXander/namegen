@@ -5,7 +5,7 @@ from bisect import bisect_left
 from typing import List, Optional, Sequence, Tuple
 from .generator import Generator
 from .constraint_sampler import (GenerationConstraints, meets_includes_constraint,
-                                 parse_excludes_tokens)
+                                 parse_excludes_tokens, feasible_word_counts)
 
 
 # Novel reference names sampled to calibrate the naturalness percentile.
@@ -69,10 +69,19 @@ class NameGenerator:
         ll = self.generator.log_likelihood(scored)
         return round(100 * bisect_left(self._reference, ll) / len(self._reference))
     
+    @staticmethod
+    def _pick_word_count(word_counts: Optional[Sequence[int]], includes: str,
+                         max_length: int) -> Optional[int]:
+        """Sample this attempt's number of words from the allowed counts that
+        fit the length budget (None if none fit)."""
+        counts = feasible_word_counts(word_counts, includes, max_length)
+        return random.choice(counts) if counts else None
+
     def generate_name(self, min_length: int = 1, max_length: int = 20, 
                      starts_with: str = "", ends_with: str = "", 
                      includes: str = "", excludes: str = "",
-                     regex_pattern: Optional[str] = None) -> Optional[str]:
+                     regex_pattern: Optional[str] = None,
+                     word_counts: Optional[Sequence[int]] = None) -> Optional[str]:
         """
         Generate a single name within constraints using improved constraint-integrated sampling.
         
@@ -84,15 +93,19 @@ class NameGenerator:
             includes: Text the word must include
             excludes: Text the word must exclude
             regex_pattern: Optional regex pattern the word must match
+            word_counts: Allowed numbers of space-separated words; each
+                attempt samples one of them (see allowed_word_counts)
             
         Returns:
             A word that meets constraints, or None if generated word doesn't meet constraints
         """
-        # A space in `includes` means "split into separate words". Only the
-        # component sampler can emit a literal space (the model's alphabet has
-        # none), so route there — and skip the single-word fallback below, which
-        # could never produce the space.
-        if " " in includes:
+        words = self._pick_word_count(word_counts, includes, max_length)
+        if words is None:
+            return None
+        # Only the component sampler can emit a literal space (the model's
+        # alphabet has none), so route multi-word attempts there — and skip the
+        # single-word fallback below, which could never produce the space.
+        if words > 1:
             return self.generate_name_with_components(
                 components=[],
                 min_length=min_length,
@@ -102,7 +115,9 @@ class NameGenerator:
                 includes=includes,
                 excludes=excludes,
                 regex_pattern=regex_pattern,
+                word_counts=[words],
             )
+        includes = includes.replace(" ", "")
 
         # Try new constraint-integrated approach first
         name = self.generator.generate_with_constraints(
@@ -140,7 +155,8 @@ class NameGenerator:
                       starts_with: str = "", ends_with: str = "", 
                       includes: str = "", excludes: str = "",
                       max_time_per_name: float = 0.02,
-                      regex_pattern: Optional[str] = None) -> List[str]:
+                      regex_pattern: Optional[str] = None,
+                      word_counts: Optional[Sequence[int]] = None) -> List[str]:
         """
         Generate multiple names that meet constraints within time limit.
         
@@ -165,7 +181,7 @@ class NameGenerator:
             starts_with=starts_with, ends_with=ends_with,
             includes=includes, excludes=excludes, regex_pattern=regex_pattern
         )
-        if not constraints.is_feasible():
+        if not constraints.is_feasible() or not feasible_word_counts(word_counts, includes, max_length):
             return []
 
         names = []
@@ -176,7 +192,7 @@ class NameGenerator:
 
         while len(names) < n:
             name = self.generate_name(min_length, max_length, starts_with,
-                                    ends_with, includes, excludes, regex_pattern)
+                                    ends_with, includes, excludes, regex_pattern, word_counts)
             attempts += 1
 
             if name is not None:
@@ -197,7 +213,8 @@ class NameGenerator:
                                     includes: str = "", excludes: str = "",
                                     component_order: Optional[List[int]] = None,
                                     component_separation: Tuple[int, int] = (0, 3),
-                                    regex_pattern: Optional[str] = None) -> Optional[str]:
+                                    regex_pattern: Optional[str] = None,
+                                    word_counts: Optional[Sequence[int]] = None) -> Optional[str]:
         """
         Generate a single name with component constraints.
         
@@ -212,10 +229,14 @@ class NameGenerator:
             component_order: Specific ordering of components (indices into components list)
             component_separation: Min/max characters between components
             regex_pattern: Optional regex pattern to match
+            word_counts: Allowed numbers of space-separated words
             
         Returns:
             Generated name meeting constraints, or None if constraints impossible
         """
+        words = self._pick_word_count(word_counts, includes, max_length)
+        if words is None:
+            return None
         name = self.generator.generate_with_components(
             components=components,
             min_length=min_length,
@@ -226,7 +247,8 @@ class NameGenerator:
             excludes=excludes,
             component_order=component_order,
             component_separation=component_separation,
-            regex_pattern=regex_pattern
+            regex_pattern=regex_pattern,
+            word_breaks=words - 1
         )
         
         if name is not None:
@@ -244,7 +266,8 @@ class NameGenerator:
                                      component_order: Optional[List[int]] = None,
                                      component_separation: Tuple[int, int] = (0, 3),
                                      max_time_per_name: float = 0.5,
-                                     regex_pattern: Optional[str] = None) -> List[str]:
+                                     regex_pattern: Optional[str] = None,
+                                     word_counts: Optional[Sequence[int]] = None) -> List[str]:
         """
         Generate multiple names with component constraints.
         
@@ -282,7 +305,8 @@ class NameGenerator:
                 excludes=excludes,
                 component_order=component_order,
                 component_separation=component_separation,
-                regex_pattern=regex_pattern
+                regex_pattern=regex_pattern,
+                word_counts=word_counts
             )
             attempts += 1
 

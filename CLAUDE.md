@@ -52,7 +52,7 @@ Nameforge: a name generator built on one premise — LLMs are bad at inventing t
 ## Cross-cutting invariants
 
 - All generation is lowercase. Constraint strings are lowercased and stripped of stray quote characters (`dequote()`), because users copy the quotes from the GUI's quoted examples.
-- A **space in `includes`** means two-word output (`'co ' + ends_with 'a'` → `code noda`); it reroutes to the component sampler, which places a literal space and resets the Markov context per word.
+- **Word count is `generation.word_counts`** (allowed counts, e.g. `[1, 2]`; one is picked per attempt). Multi-word attempts reroute to the component sampler, which places literal spaces and resets the Markov context per word. A space in `includes` only matters when `word_counts` is unset (legacy: means two words).
 - `config.yaml` is the single source of truth for every setting; the GUI rewrites it whole (the server keeps `word_list_ratings` authoritative). Judge settings live under `llm` (`description`, `keywords`, `guidance`, `judges`, `final_model`, `final_size`, `chunk_size`, `embedding_model`, `available_models`) plus `ai_settings.max_names` (names that get a full verdict; the quick screen picks them). The lexicon and breeding live under `training_data` (`lexicon`, `lexicon_share`, `breed`, `seeds`, `seed_share`).
 - All AI calls go through OpenRouter (OpenAI SDK at openrouter.ai) with `OPENROUTER_API_KEY` from the repo-root `.env`; real cost comes from OpenRouter's usage accounting.
 

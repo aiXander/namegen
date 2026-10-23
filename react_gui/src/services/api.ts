@@ -62,6 +62,7 @@ export interface Config {
     excludes: string;
     max_time_per_name?: number;
     regex_pattern?: string;
+    word_counts?: number[];
     components?: string[];
     component_order?: number[];
     component_separation?: [number, number];

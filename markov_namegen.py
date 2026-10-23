@@ -196,7 +196,8 @@ class MarkovNameGenerator:
                 component_order=gen_config.get('component_order'),
                 component_separation=tuple(gen_config.get('component_separation', [0, 3])),
                 max_time_per_name=gen_config.get('max_time_per_name', 1.0),
-                regex_pattern=gen_config.get('regex_pattern') if gen_config.get('regex_pattern') else None
+                regex_pattern=gen_config.get('regex_pattern') if gen_config.get('regex_pattern') else None,
+                word_counts=gen_config.get('word_counts')
             )
         else:
             # Use standard generation
@@ -209,7 +210,8 @@ class MarkovNameGenerator:
                 includes=gen_config.get('includes', ''),
                 excludes=gen_config.get('excludes', ''),
                 max_time_per_name=gen_config.get('max_time_per_name', 1.0),
-                regex_pattern=gen_config.get('regex_pattern') if gen_config.get('regex_pattern') else None
+                regex_pattern=gen_config.get('regex_pattern') if gen_config.get('regex_pattern') else None,
+                word_counts=gen_config.get('word_counts')
             )
         
         # Apply filtering

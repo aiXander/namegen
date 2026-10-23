@@ -1,5 +1,5 @@
 ai_settings:
-  max_names: 500
+  max_names: 750
 filtering:
   exclude_training_words: true
   min_edit_distance: 1
@@ -7,13 +7,16 @@ filtering:
 generation:
   ends_with: a
   excludes: ''
-  includes: '''co'' '
-  max_length: 12
+  includes: ''
+  max_length: 11
   max_time_per_name: 3
-  min_length: 6
-  n_words: 3000
+  min_length: 5
+  n_words: 5000
   regex_pattern: ''
   starts_with: ''
+  word_counts:
+  - 1
+  - 2
 llm:
   available_models:
   - anthropic/claude-haiku-5.5
@@ -28,9 +31,10 @@ llm:
   description: We are going to evaluate names for an AI agent that acts as the collective
     mind for communities and organizations. This agent will embody the collective
     consciousness of the group, act as echochamber, brainstorming partner, matchmaker,
-    collective memory and coordination agent for teams, communities, events, festivals
-    and decentralized organisations. The name should feel welcoming, organic, but
-    also grounded and present. Ideally, the name has some hints as to its purpose.
+    collective memory and coordination agent for teams, communities, neighbourhoods,
+    events, festivals and decentralized organisations. The name should feel welcoming,
+    organic, but also grounded and present. Ideally, the name has some hints as to
+    its purpose.
   embedding_model: openai/text-embedding-3-large
   final_model: anthropic/claude-sonnet-5.5
   final_size: 30
@@ -44,7 +48,7 @@ llm:
 model:
   backoff: true
   order: 3
-  temperature: 1.1
+  temperature: 1
 output:
   format: list
   output_file: generated_names.txt
@@ -539,6 +543,496 @@ training_data:
   - lang: Indonesian
     meaning: harmony
     word: rukun
+  - lang: Maori
+    meaning: gift, contribution
+    word: koha
+  - lang: Maori
+    meaning: shared purpose
+    word: kaupapa
+  - lang: Maori
+    meaning: genealogy, connection
+    word: whakapapa
+  - lang: Maori
+    meaning: hospitality, care
+    word: manaaki
+  - lang: Maori
+    meaning: weaver of people, chief
+    word: rangatira
+  - lang: Maori
+    meaning: horizon, perch
+    word: pae
+  - lang: Maori
+    meaning: to join, link
+    word: hono
+  - lang: Maori
+    meaning: woven basket
+    word: kete
+  - lang: Maori
+    meaning: gather together
+    word: huihui
+  - lang: Hawaiian
+    meaning: to cling, be close
+    word: pili
+  - lang: Hawaiian
+    meaning: community
+    word: kaiaulu
+  - lang: Hawaiian
+    meaning: friend, companion
+    word: hoa
+  - lang: Hawaiian
+    meaning: to turn, change
+    word: huli
+  - lang: Hawaiian
+    meaning: thing, being
+    word: mea
+  - lang: Japanese
+    meaning: companions
+    word: nakama
+  - lang: Japanese
+    meaning: flock, group
+    word: mure
+  - lang: Japanese
+    meaning: gathering, group
+    word: shu
+  - lang: Japanese
+    meaning: cloud
+    word: kumo
+  - lang: Japanese
+    meaning: wave
+    word: nami
+  - lang: Japanese
+    meaning: thread
+    word: ito
+  - lang: Japanese
+    meaning: friend
+    word: tomo
+  - lang: Japanese
+    meaning: festival
+    word: matsuri
+  - lang: Japanese
+    meaning: cooperation
+    word: kyodo
+  - lang: Japanese
+    meaning: thought, feeling
+    word: omoi
+  - lang: Japanese
+    meaning: rain
+    word: ame
+  - lang: Italian
+    meaning: synapse
+    word: sinapsi
+  - lang: Greek
+    meaning: junction, clasp
+    word: synapse
+  - lang: Greek
+    meaning: nerve, sinew
+    word: neuron
+  - lang: Greek
+    meaning: mind, diaphragm
+    word: phren
+  - lang: Greek
+    meaning: thought, judgment
+    word: gnome
+  - lang: Greek
+    meaning: wisdom
+    word: sophia
+  - lang: Greek
+    meaning: love
+    word: agape
+  - lang: Greek
+    meaning: affection, friendship
+    word: philia
+  - lang: Greek
+    meaning: companion
+    word: hetairos
+  - lang: Greek
+    meaning: sounding together
+    word: symphonia
+  - lang: Greek
+    meaning: shared place
+    word: chora
+  - lang: Greek
+    meaning: gathering portico
+    word: stoa
+  - lang: Greek
+    meaning: shared banquet
+    word: eranos
+  - lang: Greek
+    meaning: festive band
+    word: thiasos
+  - lang: Greek
+    meaning: dance chorus
+    word: koros
+  - lang: Greek
+    meaning: bee
+    word: melissa
+  - lang: Greek
+    meaning: herd, flock
+    word: agelai
+  - lang: Latin
+    meaning: public square
+    word: forum
+  - lang: Latin
+    meaning: assembly
+    word: conventus
+  - lang: Latin
+    meaning: harmony
+    word: concordia
+  - lang: Latin
+    meaning: companion
+    word: socius
+  - lang: Latin
+    meaning: neighbourhood
+    word: vicus
+  - lang: Latin
+    meaning: memory
+    word: memoria
+  - lang: Latin
+    meaning: feeling, sense
+    word: sensus
+  - lang: Latin
+    meaning: reason
+    word: ratio
+  - lang: Latin
+    meaning: I think
+    word: cogito
+  - lang: Latin
+    meaning: mushroom
+    word: fungus
+  - lang: Latin
+    meaning: root
+    word: radix
+  - lang: Latin
+    meaning: settlement
+    word: colonia
+  - lang: Latin
+    meaning: circle, crown
+    word: corona
+  - lang: Latin
+    meaning: around
+    word: circa
+  - lang: Latin
+    meaning: seat of sense
+    word: sensorium
+  - lang: Latin
+    meaning: agreement
+    word: consensus
+  - lang: Latin
+    meaning: friends
+    word: amici
+  - lang: Latin
+    meaning: life
+    word: vita
+  - lang: Sanskrit
+    meaning: togetherness
+    word: sangati
+  - lang: Sanskrit
+    meaning: friendship
+    word: sakhya
+  - lang: Sanskrit
+    meaning: troop, host
+    word: gana
+  - lang: Sanskrit
+    meaning: fair, meeting
+    word: mela
+  - lang: Hindi
+    meaning: net
+    word: jaal
+  - lang: Sanskrit
+    meaning: thread
+    word: sutr
+  - lang: Sanskrit
+    meaning: net of jewels reference
+    word: indra
+  - lang: Sanskrit
+    meaning: insight, thought
+    word: dhi
+  - lang: Sanskrit
+    meaning: breath, life force
+    word: prana
+  - lang: Sanskrit
+    meaning: together with
+    word: sahita
+  - lang: Sanskrit
+    meaning: assembly
+    word: sabha
+  - lang: Sanskrit
+    meaning: kin, bond
+    word: bandhu
+  - lang: Sanskrit
+    meaning: together
+    word: sam
+  - lang: Sanskrit
+    meaning: equal, melody
+    word: saman
+  - lang: Latvian
+    meaning: fate spirit
+    word: lauma
+  - lang: Latvian
+    meaning: society
+    word: sabiedriba
+  - lang: Latvian
+    meaning: together
+    word: kopa
+  - lang: Lithuanian
+    meaning: together
+    word: kartu
+  - lang: Lithuanian
+    meaning: bee
+    word: bite
+  - lang: Lithuanian
+    meaning: friend
+    word: drauge
+  - lang: Estonian
+    meaning: spirit, mind
+    word: vaim
+  - lang: Estonian
+    meaning: together
+    word: koos
+  - lang: Finnish
+    meaning: family
+    word: pere
+  - lang: Finnish
+    meaning: village
+    word: kyla
+  - lang: Finnish
+    meaning: bee
+    word: mehila
+  - lang: Finnish
+    meaning: feeling
+    word: tunne
+  - lang: Old Norse
+    meaning: assembly
+    word: parlament
+  - lang: Old Norse
+    meaning: dwelling, community
+    word: bu
+  - lang: Old Norse
+    meaning: settlement
+    word: byr
+  - lang: Old Norse
+    meaning: poet
+    word: skald
+  - lang: Old Norse
+    meaning: secret, letter
+    word: rune
+  - lang: Old Norse
+    meaning: fate weaver
+    word: norn
+  - lang: Old Norse
+    meaning: general assembly
+    word: allting
+  - lang: Old Norse
+    meaning: breath, spirit
+    word: ond
+  - lang: Old Norse
+    meaning: friend
+    word: vinr
+  - lang: Swedish
+    meaning: just right, shared
+    word: lagom
+  - lang: Swedish
+    meaning: to gather
+    word: samla
+  - lang: Norwegian
+    meaning: together
+    word: sammen
+  - lang: Norwegian
+    meaning: communal work
+    word: dugnad
+  - lang: Norwegian
+    meaning: cosy
+    word: koselig
+  - lang: Danish
+    meaning: flock
+    word: flok
+  - lang: Norwegian
+    meaning: community
+    word: fellesskap
+  - lang: Nahuatl
+    meaning: earth
+    word: tlalli
+  - lang: Nahuatl
+    meaning: neighbourhood clan
+    word: calpulli
+  - lang: Nahuatl
+    meaning: heart
+    word: yollotl
+  - lang: Quechua
+    meaning: world, earth, time
+    word: pacha
+  - lang: Quechua
+    meaning: person, people
+    word: runa
+  - lang: Quechua
+    meaning: encounter, meeting
+    word: tinkuy
+  - lang: Quechua
+    meaning: to speak
+    word: rimay
+  - lang: Quechua
+    meaning: thought, memory
+    word: yuyay
+  - lang: Quechua
+    meaning: gathering
+    word: tantanakuy
+  - lang: Quechua
+    meaning: hand
+    word: maki
+  - lang: Swahili
+    meaning: organisation
+    word: shirika
+  - lang: Swahili
+    meaning: meeting
+    word: mkutano
+  - lang: Swahili
+    meaning: spirit
+    word: roho
+  - lang: Swahili
+    meaning: heart
+    word: moyo
+  - lang: Swahili
+    meaning: group, flock
+    word: kundi
+  - lang: Swahili
+    meaning: we, us
+    word: sisi
+  - lang: Swahili
+    meaning: we are
+    word: tuko
+  - lang: Swahili
+    meaning: brotherhood
+    word: undugu
+  - lang: Hebrew
+    meaning: congregation
+    word: edah
+  - lang: Hebrew
+    meaning: assembly
+    word: kahal
+  - lang: Hebrew
+    meaning: bee
+    word: devorah
+  - lang: Hebrew
+    meaning: soul
+    word: nefesh
+  - lang: Hebrew
+    meaning: spirit, wind
+    word: ruach
+  - lang: Hebrew
+    meaning: fellowship
+    word: chavura
+  - lang: Hebrew
+    meaning: abundance, flow
+    word: shefa
+  - lang: Basque
+    meaning: heart
+    word: bihotz
+  - lang: Basque
+    meaning: we
+    word: gu
+  - lang: Basque
+    meaning: companion
+    word: lagun
+  - lang: Basque
+    meaning: fellow, member
+    word: kide
+  - lang: Basque
+    meaning: branch
+    word: adar
+  - lang: Basque
+    meaning: root
+    word: sustrai
+  - lang: Basque
+    meaning: mind
+    word: mente
+  - lang: Welsh
+    meaning: gathering
+    word: cynnull
+  - lang: Welsh
+    meaning: bees
+    word: gwenyn
+  - lang: Welsh
+    meaning: familiar habitat
+    word: cynefin
+  - lang: Welsh
+    meaning: love
+    word: cariad
+  - lang: Welsh
+    meaning: universe
+    word: bydysawd
+  - lang: Irish
+    meaning: family, clan
+    word: clann
+  - lang: Irish
+    meaning: cooperation
+    word: comhar
+  - lang: Irish
+    meaning: friends
+    word: cairde
+  - lang: Irish
+    meaning: soul
+    word: anam
+  - lang: Irish
+    meaning: fairy mound
+    word: sidhe
+  - lang: Scottish Gaelic
+    meaning: society
+    word: comunn
+  - lang: Irish
+    meaning: meadow
+    word: cluain
+  - lang: Russian
+    meaning: assembly
+    word: sobor
+  - lang: Russian
+    meaning: commune
+    word: obshchina
+  - lang: Russian
+    meaning: flock
+    word: stayka
+  - lang: Russian
+    meaning: friendship
+    word: druzhba
+  - lang: Russian
+    meaning: soul
+    word: dusha
+  - lang: Hawaiian
+    meaning: placeholder
+    word: selam
+  - lang: Sanskrit
+    meaning: swan, flock bird
+    word: hamsa
+  - lang: German
+    meaning: mumble
+    word: murmel
+  - lang: Latin
+    meaning: starling
+    word: sturnus
+  - lang: Maori
+    meaning: child
+    word: tama
+  - lang: Maori
+    meaning: spring, well
+    word: puna
+  - lang: Maori
+    meaning: the (plural)
+    word: nga
+  - lang: Maori
+    meaning: to stitch, bird
+    word: tui
+  - lang: Maori
+    meaning: embrace
+    word: awhi
+  - lang: Maori
+    meaning: post, pillar
+    word: pou
+  - lang: Maori
+    meaning: territory
+    word: rohe
+  - lang: Maori
+    meaning: tribe prefix
+    word: ngati
+  lexicon_share: 0.3
   score_range:
     max: 5
     min: 1
@@ -552,35 +1046,77 @@ training_data:
   - noomind
   - noos
   - resona
-  - myco ka
-  - myco una
-  - cona weava
-  - concor melia
-  - hypha corsa
-  - myco mena
-  - common fora
-  - con weavena
-  - commun floka
-  - comm samara
-  - kin cora
-  - concordi dea
-  - koino cona
-  - commune anda
-  - comm weava
-  - commun vita
-  - chitter cora
-  - melu cordia
-  - commun mina
-  - commo mychea
-  - commo mielia
-  - co vena
-  - cori mana
-  - const ohana
-  - col sana
-  - symb cora
-  - kincor elka
-  - coo kina
-  - io cora
+  - mycoralia
+  - mycoroma
+  - mycorama
+  - concordina
+  - mycoraga
+  - comindalia
+  - mycoromia
+  - mycoriana
+  - commonsea
+  - mycoriela
+  - mycorosela
+  - mycoraina
+  - cogitana
+  - commonata
+  - corilla
+  - mycorsea
+  - mycorsara
+  - comindela
+  - nucora
+  - consaga
+  - commontera
+  - mycorona
+  - cogniza
+  - concordura
+  - communea
+  - coralia
+  - commonia
+  - commonsona
+  - comunisona
+  - apicola
+  - columbra
+  - cordiana
+  - convena
+  - conallia
+  - collora
+  - consonalla
+  - conalla
+  - comunna
+  - comunina
+  - collumina
+  - co murmela
+  - mycor viania
+  - myco kunda
+  - cor murmela
+  - murm cominea
+  - synap cora
+  - cottol hypha
+  - sympho cora
+  - myco shefara
+  - comun fluora
+  - myc coirsea
+  - weav colma
+  - myco ipota
+  - coonet ohana
+  - corain vera
+  - locus coraga
+  - covi mykessa
+  - cymu cora
+  - co perena
+  - coro eilia
+  - synico umoja
+  - cora gemena
+  - co rima
+  - comu levia
+  - mycori ela
+  - fora mycora
+  - comm mycora
+  - murmu covisa
+  - comm murmura
+  - murmu cora
+  - munin cora
   sources:
   - animal_sounds.txt
   - brythonic_deities.txt
@@ -598,13 +1134,23 @@ training_data:
   - theological_demons.txt
   - tolkienesque_forenames.txt
   - websites.txt
+  - american_companies.txt
+  - animals.txt
+  - consumer_brands.txt
   weighting: rating
 word_list_ratings:
+  american_companies.txt: 3
   animal_sounds.txt: 4
+  animals.txt: 2
   atomic_and_subatomic_particles.txt: 2
+  brythonic_deities.txt: 1
+  consumer_brands.txt: 3
   egyptian_deities.txt: 3
   fabrics.txt: 3
+  flowers_common_names.txt: 2
+  greek_islands.txt: 2
   icelandic_forenames.txt: 2
+  irish_forenames.txt: 1
   pokemon.txt: 4
   programming_languages.txt: 2
   roman_deities.txt: 3

@@ -13,7 +13,7 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from markov.name_generator import NameGenerator
-from markov.constraint_sampler import meets_includes_constraint
+from markov.constraint_sampler import meets_includes_constraint, allowed_word_counts
 from markov_namegen import WORD_LISTS_DIR, load_word_list
 
 SOURCES = ["roman_deities.txt", "tolkienesque_forenames.txt", "swedish_forenames.txt",
@@ -92,16 +92,21 @@ def main():
         check(f"{kwargs}", len(produced) > 0 and not bad,
               f"{len(produced)} produced, violations: {bad[:5]}")
 
-    print("\nMulti-word mode — a space in `includes` splits into words (1000 attempts each):")
-    # The output must contain exactly one space, no empty word, and still
+    print("\nMulti-word mode — `word_counts` sets the allowed number of words (1000 attempts each):")
+    # Every output must have an allowed word count, no empty word, and still
     # honour the other constraints over the whole joined string.
     word_cases = [
-        {"includes": " ", "min_length": 5, "max_length": 9},
-        {"includes": " ", "ends_with": "a", "min_length": 5, "max_length": 10},
-        {"includes": "co ", "ends_with": "a", "min_length": 5, "max_length": 11},
-        {"includes": " ;co", "ends_with": "a", "min_length": 5, "max_length": 11},  # the reported case
-        {"includes": " ", "starts_with": "lu", "min_length": 6, "max_length": 12},
-        # stray quotes copied from the GUI examples must not break matching
+        {"word_counts": [2], "min_length": 5, "max_length": 9},
+        {"word_counts": [2], "ends_with": "a", "min_length": 5, "max_length": 10},
+        {"word_counts": [2], "includes": "co", "ends_with": "a", "min_length": 5, "max_length": 11},
+        {"word_counts": [2], "includes": "co;mu", "ends_with": "a", "min_length": 5, "max_length": 11},
+        {"word_counts": [2], "starts_with": "lu", "min_length": 6, "max_length": 12},
+        {"word_counts": [3], "min_length": 8, "max_length": 14},
+        {"word_counts": [3], "includes": "co", "ends_with": "a", "min_length": 8, "max_length": 14},
+        {"word_counts": [1, 2], "ends_with": "a", "min_length": 5, "max_length": 11},
+        # a space in includes no longer forces words (the old two-word switch)
+        {"word_counts": [1], "includes": "'co' ", "ends_with": "a", "min_length": 5, "max_length": 11},
+        # unset word_counts keeps the old meaning: a space in includes -> two words
         {"includes": "'co, '", "ends_with": "a", "min_length": 5, "max_length": 11},
     ]
     for kwargs in word_cases:
@@ -110,17 +115,19 @@ def main():
             name = gen.generate_name(**kwargs)
             if name:
                 produced.append(name)
+        allowed = allowed_word_counts(kwargs.get("word_counts"), kwargs.get("includes", ""))
         includes_clean = kwargs.get("includes", "").replace(" ", "")
         bad = [n for n in produced if not (
             kwargs["min_length"] <= len(n) <= kwargs["max_length"]
-            and n.count(" ") == 1
+            and n.count(" ") + 1 in allowed
             and all(w for w in n.split(" "))
             and n.startswith(kwargs.get("starts_with", ""))
             and n.endswith(kwargs.get("ends_with", ""))
             and (not includes_clean or meets_includes_constraint(n, includes_clean))
         )]
-        check(f"{kwargs}", len(produced) > 0 and not bad,
-              f"{len(produced)} produced, violations: {bad[:5]}")
+        seen = sorted({n.count(" ") + 1 for n in produced})
+        check(f"{kwargs}", len(produced) > 0 and not bad and seen == allowed,
+              f"{len(produced)} produced, word counts seen {seen}, violations: {bad[:5]}")
 
     print("\nInfeasible constraints fail fast (and return empty, not hang):")
     infeasible = [
@@ -128,6 +135,7 @@ def main():
         {"starts_with": "abcdef", "ends_with": "ghijkl", "max_length": 8},
         {"excludes": "a", "ends_with": "a"},
         {"includes": "xx", "excludes": "x"},
+        {"word_counts": [3], "max_length": 7},  # 3 words need >= 8 chars
     ]
     for kwargs in infeasible:
         start = time.perf_counter()

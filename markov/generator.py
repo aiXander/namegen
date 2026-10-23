@@ -145,7 +145,8 @@ class Generator:
                                includes: str = "", excludes: str = "",
                                component_order: Optional[List[int]] = None,
                                component_separation: Tuple[int, int] = (0, 3),
-                               regex_pattern: Optional[str] = None) -> Optional[str]:
+                               regex_pattern: Optional[str] = None,
+                               word_breaks: int = 0) -> Optional[str]:
         """
         Generate a word using multi-component sampling.
         
@@ -160,6 +161,7 @@ class Generator:
             component_order: Specific ordering of components (indices into components list)
             component_separation: Min/max characters between components
             regex_pattern: Optional regex pattern to match
+            word_breaks: Number of spaces in the output (words - 1)
             
         Returns:
             Generated word meeting constraints, or None if constraints impossible
@@ -174,7 +176,8 @@ class Generator:
             regex_pattern=regex_pattern,
             components=components,
             component_order=component_order,
-            component_separation=component_separation
+            component_separation=component_separation,
+            word_breaks=word_breaks
         )
         
         return self.multi_component_sampler.generate_with_components(constraints)

@@ -15,13 +15,14 @@ connected by Markov-sampled filler segments. Each attempt:
 ``starts_with``/``ends_with`` are treated as additional fixed parts pinned to
 the word boundaries. A single posterior validation guarantees correctness.
 
-Multi-word output: a space in the ``includes`` pattern becomes ``word_breaks``
-literal space separators placed among the fixed parts. A space is a structural
+Multi-word output: ``word_breaks`` (the word count minus one, from the
+``generation.word_counts`` setting) literal space separators are placed among
+the fixed parts. A space is a structural
 separator the model never emits, so on each side of one the Markov context is
 reset to fresh ``#``-padding — i.e. each space starts a brand-new word. The
 junction plausibility checks are skipped *across* a space (the model has no
 opinion about spaces) but still enforced when a real fixed part begins a new
-word. This is how ``includes=' ' + ends_with='a'`` yields e.g. ``code noda``.
+word. This is how two words + ``ends_with='a'`` yields e.g. ``code noda``.
 """
 
 import random
@@ -30,7 +31,7 @@ from typing import List, Optional, Tuple
 from dataclasses import dataclass, field
 from .markov_model import MarkovModel
 from .constraint_sampler import (ConstraintSampler, GenerationConstraints,
-                                 meets_includes_constraint, dequote)
+                                 meets_includes_constraint, dequote, MIN_WORD_LEN)
 
 
 @dataclass
@@ -42,19 +43,10 @@ class ComponentConstraints(GenerationConstraints):
     word_breaks: int = 0  # Number of space separators (multi-word output)
 
     def __post_init__(self):
-        raw_includes = self.includes
         super().__post_init__()
         # Ensure all components are lowercase, quote-free, and non-empty
         self.components = [dequote(comp).strip().lower() for comp in self.components
                            if dequote(comp).strip()]
-        # A literal space in the `includes` pattern requests a word break: the
-        # output is split into separate Markov-sampled words joined by a space.
-        # The space is a structural signal, not a substring to match, so it is
-        # stripped out of the includes tokens (which the model can never emit
-        # anyway — spaces aren't in its alphabet). One break -> two words.
-        if " " in raw_includes:
-            self.word_breaks = max(self.word_breaks, 1)
-        self.includes = self.includes.replace(" ", "")
 
 
 class MultiComponentSampler:
@@ -62,7 +54,6 @@ class MultiComponentSampler:
 
     MAX_ORDERINGS_PER_ATTEMPT = 8
     SEPARATOR = " "        # literal word separator inserted for word breaks
-    MIN_WORD_LEN = 2       # each space-separated word gets at least this many chars
 
     def __init__(self, markov_models):
         if isinstance(markov_models, MarkovModel):
@@ -114,18 +105,11 @@ class MultiComponentSampler:
 
     def _insert_separators(self, components: List[str], word_breaks: int) -> List[Tuple[str, str]]:
         """Lay the ordered components out as ``(text, kind)`` parts and sprinkle
-        ``word_breaks`` separators at interior slots, never adjacent to each
-        other (which would make an empty word)."""
+        ``word_breaks`` separators at random slots. Adjacent separators are fine:
+        the gap between them gets a minimum length, so it becomes a real word."""
         parts: List[Tuple[str, str]] = [(comp, "comp") for comp in components]
         for _ in range(max(0, word_breaks)):
-            # A slot k inserts before index k; reject slots next to an existing
-            # separator so two breaks never collide into an empty word.
-            valid = [k for k in range(len(parts) + 1)
-                     if not (k > 0 and parts[k - 1][1] == "sep")
-                     and not (k < len(parts) and parts[k][1] == "sep")]
-            if not valid:
-                break
-            parts.insert(random.choice(valid), (self.SEPARATOR, "sep"))
+            parts.insert(random.randint(0, len(parts)), (self.SEPARATOR, "sep"))
         return parts
 
     def _sample_arrangement(self, components: List[str], constraints: ComponentConstraints,
@@ -168,10 +152,10 @@ class MultiComponentSampler:
         for i, kind in enumerate(kinds):
             if kind != "sep":
                 continue
-            if i == 0 or kinds[i - 1] == "sep":  # left word is only this gap
-                gap_min[i] = max(gap_min[i], self.MIN_WORD_LEN)
+            left_fixed = len(fixed_parts[i - 1]) if i > 0 and kinds[i - 1] != "sep" else 0
+            gap_min[i] = max(gap_min[i], MIN_WORD_LEN - left_fixed)
             right_fixed = len(fixed_parts[i + 1]) if i + 1 < len(fixed_parts) and kinds[i + 1] != "sep" else 0
-            gap_min[i + 1] = max(gap_min[i + 1], self.MIN_WORD_LEN - right_fixed)
+            gap_min[i + 1] = max(gap_min[i + 1], MIN_WORD_LEN - right_fixed)
 
         fixed_length = sum(len(part) for part in fixed_parts)
         required = fixed_length + sum(gap_min)

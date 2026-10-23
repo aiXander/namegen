@@ -18,7 +18,7 @@ import queue
 import time
 from typing import Any, Callable, Dict, Iterator, List, Optional
 from markov_namegen import MarkovNameGenerator, WORD_LISTS_DIR, MIN_SEED_DISTANCE, nearest_training_word
-from markov.constraint_sampler import GenerationConstraints
+from markov.constraint_sampler import GenerationConstraints, feasible_word_counts
 from ai.judge import NameJudge, build_brief, select_examples, DEFAULT_JUDGES, DEFAULT_FINAL_MODEL
 from ai.embeddings import EmbeddingPrefilter, DEFAULT_EMBEDDING_MODEL
 from ai.lexicon import build_lexicon, DEFAULT_LEXICON_MODEL
@@ -582,6 +582,8 @@ def generate_names_stream():
         return _sse_error_response(
             'These constraints contradict each other (check min/max length, '
             'prefix + suffix length vs max length, and includes vs excludes)')
+    if not feasible_word_counts(gen_cfg.get('word_counts'), gen_cfg.get('includes', ''), constraints.max_length):
+        return _sse_error_response('The maximum length is too short for the allowed number of words')
 
     try:
         generator = _get_generator(config)
@@ -623,6 +625,7 @@ def generate_names_with_progress(generator: MarkovNameGenerator, config: Dict[st
         includes=gen_config.get('includes', ''),
         excludes=gen_config.get('excludes', ''),
         regex_pattern=regex_pattern,
+        word_counts=gen_config.get('word_counts'),
     )
     if components:
         kwargs.update(components=components,
