@@ -1,212 +1,151 @@
-import React, { useState } from 'react';
-import { Trash2, Edit3 } from 'lucide-react';
-import { apiService } from '../services/api';
-import Modal from './Modal';
+import React, { useRef, useState } from 'react';
+import { Trash2, Edit3, Copy, Check } from 'lucide-react';
+import { apiService, FinalEntry, Verdict } from '../services/api';
+import { titleCase } from '../lib/names';
 import StarRating from './StarRating';
 
 interface SavedResultsTabProps {
   ratings: Record<string, number>;
-  onRatingsChange: (ratings: Record<string, number>) => void;
+  setRatings: React.Dispatch<React.SetStateAction<Record<string, number>>>;
+  verdicts: Record<string, Verdict>;
+  final: Record<string, FinalEntry>;
+  onRate: (name: string, rating: number) => void;
+  onError: (err: any) => void;
 }
 
-const SavedResultsTab: React.FC<SavedResultsTabProps> = ({ ratings, onRatingsChange }) => {
-  const [editingName, setEditingName] = useState<string | null>(null);
-  const [newName, setNewName] = useState<string>('');
-  const [modalOpen, setModalOpen] = useState(false);
+/** Every rated name, grouped by stars. These ratings are also the judges'
+ *  taste examples, so curating them here improves future judging. */
+const SavedResultsTab: React.FC<SavedResultsTabProps> = ({ ratings, setRatings, verdicts, final, onRate, onError }) => {
+  const [editing, setEditing] = useState<string | null>(null);
+  const [draft, setDraft] = useState('');
+  const [confirmClear, setConfirmClear] = useState(false);
+  const [copied, setCopied] = useState(false);
 
-  const sortedRatings = Object.entries(ratings)
-    .sort(([, a], [, b]) => b - a);
+  const groups = [5, 4, 3, 2, 1]
+    .map(stars => ({
+      stars,
+      names: Object.keys(ratings).filter(name => ratings[name] === stars).sort()
+    }))
+    .filter(group => group.names.length);
+  const total = Object.keys(ratings).length;
 
-  const handleDeleteRating = async (name: string) => {
+  // Submit and blur can both fire for one edit; only the first commits.
+  const committing = useRef(false);
+  const rename = async (oldName: string) => {
+    if (committing.current) return;
+    committing.current = true;
+    setTimeout(() => { committing.current = false; }, 0);
+    const newName = draft.trim().toLowerCase();
+    setEditing(null);
+    if (!newName || newName === oldName) return;
     try {
-      await apiService.deleteRating(name);
-      const newRatings = { ...ratings };
-      delete newRatings[name];
-      onRatingsChange(newRatings);
-    } catch (err) {
-      console.error('Failed to delete rating:', err);
-    }
-  };
-
-  const handleClearAll = async () => {
-    if (window.confirm('Are you sure you want to clear all saved ratings?')) {
-      try {
-        await apiService.clearAllRatings();
-        onRatingsChange({});
-      } catch (err) {
-        console.error('Failed to clear ratings:', err);
-      }
-    }
-  };
-
-  const handleEditName = (name: string) => {
-    setEditingName(name);
-    setNewName(name);
-    setModalOpen(true);
-  };
-
-  const handleSaveEdit = async () => {
-    if (editingName && newName.trim() && newName.trim() !== editingName) {
-      try {
-        const oldRating = ratings[editingName];
-        // Delete the old rating
-        await apiService.deleteRating(editingName);
-        // Add the new name with the same rating
-        await apiService.rateName(newName.trim(), oldRating);
-        
-        const newRatings = { ...ratings };
-        delete newRatings[editingName];
-        newRatings[newName.trim()] = oldRating;
-        
-        onRatingsChange(newRatings);
-        setModalOpen(false);
-        setEditingName(null);
-        setNewName('');
-      } catch (err) {
-        console.error('Failed to update name:', err);
-      }
-    } else if (newName.trim() === editingName) {
-      // No change needed, just close modal
-      setModalOpen(false);
-      setEditingName(null);
-      setNewName('');
-    }
-  };
-
-  const handleRateChange = async (name: string, rating: number) => {
-    try {
-      await apiService.rateName(name, rating);
-      onRatingsChange({
-        ...ratings,
-        [name]: rating
+      await apiService.renameRating(oldName, newName);
+      setRatings(prev => {
+        const next = { ...prev, [newName]: prev[oldName] };
+        delete next[oldName];
+        return next;
       });
     } catch (err) {
-      console.error('Failed to rate name:', err);
+      onError(err);
     }
   };
 
+  const clearAll = async () => {
+    if (!confirmClear) {
+      setConfirmClear(true);
+      setTimeout(() => setConfirmClear(false), 3000);
+      return;
+    }
+    try {
+      await apiService.clearAllRatings();
+      setRatings({});
+    } catch (err) {
+      onError(err);
+    }
+    setConfirmClear(false);
+  };
+
+  const copyTop = async () => {
+    const lines = groups.flatMap(g => g.names.map(name => `${titleCase(name)} (${g.stars}★)`));
+    await navigator.clipboard.writeText(lines.join('\n'));
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
+
+  if (total === 0) {
+    return (
+      <div className="empty-state">
+        <h2 className="empty-title">Your shortlist is empty</h2>
+        <p className="text-muted">
+          Rate names in Results (click the stars, or press <kbd>1</kbd>–<kbd>5</kbd> on a row). Every rating also
+          teaches the judges your taste, low ratings included.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div>
       <div className="flex items-center justify-between mb-4">
-        <h2 className="text-xl font-bold">Saved Results</h2>
-        
+        <p className="text-muted text-sm">
+          {total} rated names. They double as the judges' taste examples, so low ratings are useful too.
+        </p>
         <div className="flex gap-2">
-          <button 
-            className="btn btn-secondary"
-            onClick={() => window.location.reload()}
-          >
-            Refresh
+          <button className="btn btn-ghost btn-small" onClick={copyTop}>
+            {copied ? <Check size={13} /> : <Copy size={13} />} {copied ? 'Copied' : 'Copy all'}
           </button>
-          <button 
-            className="btn btn-danger"
-            onClick={handleClearAll}
-            disabled={sortedRatings.length === 0}
-          >
-            Clear All
+          <button className="btn btn-danger btn-small" onClick={clearAll}>
+            <Trash2 size={13} /> {confirmClear ? 'Click again to clear all' : 'Clear all'}
           </button>
         </div>
       </div>
 
-      {sortedRatings.length === 0 ? (
-        <div className="text-center py-8">
-          <p className="text-muted">No saved names yet. Rate some names in the Results tab!</p>
-        </div>
-      ) : (
-        <div>
-          <p className="text-muted mb-4">
-            Saved Names ({sortedRatings.length} total):
-          </p>
-
-          <div className="space-y-3 max-h-128 overflow-y-auto">
-            {sortedRatings.map(([name, rating]) => (
-              <div key={name} className="card">
-                <div className="flex items-center justify-between">
-                  {/* Action buttons */}
-                  <div className="flex items-center gap-2">
-                    <button
-                      className="btn btn-small btn-danger"
-                      onClick={() => handleDeleteRating(name)}
-                      title="Delete"
-                    >
-                      <Trash2 size={14} />
-                    </button>
-                    
-                    <button
-                      className="btn btn-small btn-secondary"
-                      onClick={() => handleEditName(name)}
-                      title="Edit name"
-                    >
-                      <Edit3 size={14} />
-                    </button>
-                  </div>
-                  
-                  {/* Name in three case treatments */}
-                  <div className="flex items-center justify-center flex-1" style={{ gap: '28px' }}>
-                    <span className="name-display">{name.toLowerCase()}</span>
-                    <span className="text-muted" style={{ opacity: 0.4 }}>·</span>
-                    <span className="name-display">{name.charAt(0).toUpperCase() + name.slice(1).toLowerCase()}</span>
-                    <span className="text-muted" style={{ opacity: 0.4 }}>·</span>
-                    <span className="name-display" style={{ letterSpacing: '0.08em', fontSize: '0.95rem' }}>{name.toUpperCase()}</span>
-                  </div>
-                  
-                  {/* Rating */}
-                  <div className="flex items-center gap-2">
-                    <StarRating
-                      rating={rating}
-                      onRate={(newRating) => handleRateChange(name, newRating)}
-                      size="small"
-                      showLabel={false}
-                    />
-                    <span className="text-sm text-muted">
-                      {rating}/5
-                    </span>
+      {groups.map(group => (
+        <section key={group.stars} className="shortlist-group">
+          <h3 className="shortlist-heading">
+            <span className="text-star-color">{'★'.repeat(group.stars)}</span>
+            <span className="text-muted">{'☆'.repeat(5 - group.stars)}</span>
+            <span className="tab-count">{group.names.length}</span>
+          </h3>
+          <div className={`shortlist-grid ${group.stars >= 4 ? 'large' : ''}`}>
+            {group.names.map(name => {
+              const verdict = verdicts[name];
+              const note = final[name]?.pitch || verdict?.note;
+              return (
+                <div key={name} className="shortlist-card">
+                  {editing === name ? (
+                    <form onSubmit={e => { e.preventDefault(); rename(name); }}>
+                      <input className="form-input" autoFocus value={draft}
+                        onChange={e => setDraft(e.target.value)} onBlur={() => rename(name)}
+                        onKeyDown={e => { if (e.key === 'Escape') setEditing(null); }} />
+                    </form>
+                  ) : (
+                    <div className="shortlist-name">{titleCase(name)}</div>
+                  )}
+                  {group.stars >= 4 && (
+                    <div className="case-treatments small">
+                      <span>{name}</span><span>{name.toUpperCase()}</span>
+                    </div>
+                  )}
+                  {note && <div className="name-note">{note}</div>}
+                  <div className="shortlist-actions">
+                    <StarRating rating={group.stars} onRate={r => onRate(name, r)} />
+                    <div className="flex gap-2">
+                      {verdict?.score != null && <span className="score-chip" title="Judge score">{verdict.score.toFixed(1)}</span>}
+                      <button className="icon-button" title="Rename" onClick={() => { setEditing(name); setDraft(name); }}>
+                        <Edit3 size={13} />
+                      </button>
+                      <button className="icon-button danger" title="Remove from shortlist" onClick={() => onRate(name, 0)}>
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
-        </div>
-      )}
-
-      {/* Edit name modal */}
-      <Modal
-        isOpen={modalOpen}
-        onClose={() => setModalOpen(false)}
-        title={`Edit Name for "${editingName}"`}
-      >
-        <div className="space-y-4">
-          <div className="form-group">
-            <label className="form-label">
-              New Name:
-              <span className="text-muted ml-2">Current: {editingName}</span>
-            </label>
-            <input
-              type="text"
-              value={newName}
-              onChange={(e) => setNewName(e.target.value)}
-              className="form-input"
-              placeholder="Enter new name"
-            />
-          </div>
-          
-          <div className="flex gap-2 justify-end">
-            <button
-              className="btn btn-secondary"
-              onClick={() => setModalOpen(false)}
-            >
-              Cancel
-            </button>
-            <button
-              className="btn btn-primary"
-              onClick={handleSaveEdit}
-              disabled={!newName.trim()}
-            >
-              Save
-            </button>
-          </div>
-        </div>
-      </Modal>
+        </section>
+      ))}
     </div>
   );
 };

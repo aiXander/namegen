@@ -2,6 +2,6 @@
 AI-based scoring components
 """
 
-from .llm_scorer import LLMScorer
+from .judge import NameJudge
 
-__all__ = ['LLMScorer']
+__all__ = ['NameJudge']

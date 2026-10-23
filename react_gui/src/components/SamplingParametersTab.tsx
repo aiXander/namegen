@@ -1,445 +1,251 @@
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import { RefreshCw } from 'lucide-react';
+import { apiService, Config, NameRow } from '../services/api';
+import { titleCase } from '../lib/names';
 
 interface SamplingParametersTabProps {
-  config: any;
-  onConfigChange: (config: any) => void;
+  config: Config;
+  patchConfig: <K extends keyof Config>(section: K, patch: Partial<NonNullable<Config[K]>>) => void;
 }
 
-const SamplingParametersTab: React.FC<SamplingParametersTabProps> = ({ config, onConfigChange }) => {
-  const modelConfig = config.model || {};
-  const generationConfig = config.generation || {};
-  
+const MAX_LEN = 24;
+const PREVIEW_SIZE = 18;
 
-  const updateModelConfig = (updates: any) => {
-    onConfigChange({
-      ...config,
-      model: {
-        ...modelConfig,
-        ...updates
-      }
-    });
-  };
+const parseList = (text: string) => text.split(',').map(t => t.trim()).filter(Boolean);
+const parseInts = (text: string) => parseList(text).map(Number).filter(n => Number.isInteger(n));
 
-  const updateGenerationConfig = (updates: any) => {
-    onConfigChange({
-      ...config,
-      generation: {
-        ...generationConfig,
-        ...updates
+/** Comma-separated list input that keeps the raw text while typing (deriving
+ *  the value from the parsed list made a trailing comma un-typable) and only
+ *  re-syncs when the config changes from elsewhere, e.g. loading a config. */
+const ListInput: React.FC<{
+  value: (string | number)[] | undefined;
+  parse: (text: string) => (string | number)[];
+  onChange: (parsed: any[]) => void;
+  placeholder: string;
+  disabled?: boolean;
+}> = ({ value, parse, onChange, placeholder, disabled }) => {
+  const [text, setText] = useState((value || []).join(', '));
+  useEffect(() => {
+    if (JSON.stringify(parse(text)) !== JSON.stringify(value || [])) setText((value || []).join(', '));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [JSON.stringify(value)]);
+  return (
+    <input className="form-input" value={text} placeholder={placeholder} disabled={disabled}
+      onChange={e => { setText(e.target.value); onChange(parse(e.target.value)); }} />
+  );
+};
+
+const SamplingParametersTab: React.FC<SamplingParametersTabProps> = ({ config, patchConfig }) => {
+  const model = { order: 3, temperature: 1.0, backoff: true, ...config.model };
+  const gen = { n_words: 200, min_length: 4, max_length: 12, starts_with: '', ends_with: '', includes: '', excludes: '', ...config.generation };
+  const filters = { remove_duplicates: true, exclude_training_words: true, min_edit_distance: 0, ...config.filtering };
+  const setModel = (patch: Partial<typeof model>) => patchConfig('model', patch);
+  const setGen = (patch: Partial<NonNullable<Config['generation']>>) => patchConfig('generation', patch);
+  const setFilters = (patch: Partial<NonNullable<Config['filtering']>>) => patchConfig('filtering', patch);
+  const hasComponents = !!gen.components?.length;
+
+  // Live preview: re-sample a handful of names whenever anything that shapes
+  // them changes (debounced; a newer preview aborts the stale one).
+  const [preview, setPreview] = useState<NameRow[]>([]);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  const [previewing, setPreviewing] = useState(false);
+  const [nonce, setNonce] = useState(0);
+  const previewAbort = useRef<AbortController | null>(null);
+  const shapeKey = JSON.stringify([config.training_data, config.model, config.generation, config.filtering]);
+
+  useEffect(() => {
+    if (!config.training_data?.sources?.length) {
+      setPreview([]);
+      setPreviewError('Pick some word lists in Sources to see a preview.');
+      return;
+    }
+    const timer = setTimeout(async () => {
+      previewAbort.current?.abort();
+      const abort = new AbortController();
+      previewAbort.current = abort;
+      const rows: NameRow[] = [];
+      setPreviewing(true);
+      try {
+        await apiService.generateStream(
+          { ...config, generation: { ...gen, n_words: PREVIEW_SIZE, max_time_per_name: 0.3 } },
+          row => rows.push(row), abort.signal);
+        setPreview(rows);
+        setPreviewError(rows.length ? null : 'No names fit these constraints. Loosen them a little.');
+      } catch (err: any) {
+        if (err?.name !== 'AbortError') setPreviewError(err?.message || 'Preview failed');
+      } finally {
+        if (previewAbort.current === abort) setPreviewing(false);
       }
-    });
-  };
+    }, 600);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shapeKey, nonce]);
+
+  useEffect(() => () => previewAbort.current?.abort(), []);
 
   return (
-    <div>
-      <h2 className="text-xl font-bold mb-4">Sampling Parameters</h2>
-      
-      {/* Main layout with two columns */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Generation Settings */}
-        <div className="card">
-          <div className="card-header">Generation Settings</div>
-          
+    <div className="sampling-layout">
+      <div className="space-y-4">
+        <section className="card">
+          <div className="card-header">Batch</div>
           <div className="grid grid-cols-2 gap-4">
-            {/* Number of Names */}
             <div className="form-group">
-              <label className="form-label">
-                Number of Names
-                <span 
-                  className="ml-2 text-xs text-blue-600 cursor-help" 
-                  title="How many names to generate:&#10;• Small batch (1-10): Quick testing and experimentation&#10;• Medium batch (20-50): Good variety for evaluation&#10;• Large batch (50-100): Comprehensive exploration&#10;• Note: Complex constraints may produce fewer results"
-                >
-                  ⓘ
-                </span>
-              </label>
-              <input
-                type="number"
-                min="1"
-                max="100"
-                value={generationConfig.n_words || 20}
-                onChange={(e) => updateGenerationConfig({ n_words: parseInt(e.target.value) })}
-                className="form-input"
-              />
+              <label className="form-label">Names to generate</label>
+              <input type="number" className="form-input" min={1} max={20000} value={gen.n_words}
+                onChange={e => setGen({ n_words: Math.max(1, Number(e.target.value) || 1) })} />
+              <p className="field-help">Generate thousands; the vibe prefilter and judges sort them out.</p>
             </div>
-
-            {/* Length Range */}
             <div className="form-group">
-              <label className="form-label">
-                Length Range
-                <span 
-                  className="ml-2 text-xs text-blue-600 cursor-help" 
-                  title="Control generated word length:&#10;• Short (3-6): Concise, punchy names&#10;• Medium (6-12): Balanced, most versatile&#10;• Long (12-20): Descriptive, compound-style&#10;• Components require longer lengths (8+ recommended)&#10;• Consider your use case: domains, brands, products"
-                >
-                  ⓘ
-                </span>
-              </label>
-              <div className="flex items-center gap-4 mt-2">
-                <div style={{ width: '70%' }}>
-                  <div className="dual-range-container">
-                    <div className="dual-range-track">
-                      <div 
-                        className="dual-range-progress"
-                        style={{
-                          left: `${((generationConfig.min_length || 4) - 1) / 19 * 100}%`,
-                          right: `${100 - ((generationConfig.max_length || 12) - 1) / 19 * 100}%`
-                        }}
-                      />
-                    </div>
-                    <input
-                      type="range"
-                      min="1"
-                      max="20"
-                      value={generationConfig.min_length || 4}
-                      onChange={(e) => {
-                        const value = parseInt(e.target.value);
-                        if (value <= (generationConfig.max_length || 12)) {
-                          updateGenerationConfig({ min_length: value });
-                        }
-                      }}
-                      className="dual-range-slider"
-                      style={{ zIndex: 1 }}
-                    />
-                    <input
-                      type="range"
-                      min="1"
-                      max="20"
-                      value={generationConfig.max_length || 12}
-                      onChange={(e) => {
-                        const value = parseInt(e.target.value);
-                        if (value >= (generationConfig.min_length || 4)) {
-                          updateGenerationConfig({ max_length: value });
-                        }
-                      }}
-                      className="dual-range-slider"
-                      style={{ zIndex: 2 }}
-                    />
-                  </div>
+              <label className="form-label">Length: <strong>{gen.min_length}–{gen.max_length}</strong> letters</label>
+              <div className="dual-range-container mt-2">
+                <div className="dual-range-track">
+                  <div className="dual-range-progress" style={{
+                    left: `${((gen.min_length - 1) / (MAX_LEN - 1)) * 100}%`,
+                    right: `${100 - ((gen.max_length - 1) / (MAX_LEN - 1)) * 100}%`
+                  }} />
                 </div>
-                <span className="text-sm font-medium whitespace-nowrap">
-                  {generationConfig.min_length || 4} - {generationConfig.max_length || 12} letters
-                </span>
+                <input type="range" className="dual-range-slider" min={1} max={MAX_LEN} value={gen.min_length}
+                  onChange={e => setGen({ min_length: Math.min(Number(e.target.value), gen.max_length) })} />
+                <input type="range" className="dual-range-slider" min={1} max={MAX_LEN} value={gen.max_length}
+                  onChange={e => setGen({ max_length: Math.max(Number(e.target.value), gen.min_length) })} />
               </div>
             </div>
           </div>
+        </section>
 
-          {/* Multi-Component Settings */}
-          <div className="form-group">
-            <label className="form-label">
-              Multi-Component Generation 
-              <div className="tooltip ml-2 inline-block">
-                <span className="text-xs text-blue-600 cursor-help">ⓘ</span>
-                <span className="tooltiptext">
-                  Create words with specific required components:
-                  • Components: Required substrings (e.g., 'co,mind,tech')
-                  • Order: Force specific arrangement (indices, e.g., '1,0' for mind,co)
-                  • Separation: Control spacing between components
-                  
-                  Examples: Components 'co,mind' → 'cognomind', 'mindcode'
-                  
-                  Perfect for:
-                  - Brand names with key elements
-                  - Technical terms with prefixes/suffixes
-                  - Creative combinations with guaranteed parts
-                </span>
-              </div>
-            </label>
-            <div className="grid grid-cols-1 gap-4">
-              <div>
-                <label className="text-sm text-muted">
-                  Required Components
-                  <div className="tooltip ml-2 inline-block">
-                    <span className="text-xs text-blue-600 cursor-help">ⓘ</span>
-                    <span className="tooltiptext">
-                      Comma-separated list of required substrings:
-                      • 'co,mind' = words must contain both 'co' and 'mind'
-                      • 'tech,bio,ai' = words must contain all three components
-                      • Leave empty for standard generation
-                      
-                      Examples:
-                      - 'co,mind' → 'cognomind', 'mindcode'
-                      - 'smart,tech' → 'smartech', 'techsmart'
-                    </span>
-                  </div>
-                </label>
-                <input
-                  type="text"
-                  value={generationConfig.components ? generationConfig.components.join(',') : ''}
-                  onChange={(e) => {
-                    const components = e.target.value.split(',').map(c => c.trim()).filter(c => c);
-                    updateGenerationConfig({ components: components.length > 0 ? components : undefined });
-                  }}
-                  className="form-input"
-                  placeholder="e.g., 'co,mind' or 'tech,bio,smart'"
-                />
-              </div>
-              
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="text-sm text-muted">
-                    Component Order
-                    <div className="tooltip ml-2 inline-block">
-                      <span className="text-xs text-blue-600 cursor-help">ⓘ</span>
-                      <span className="tooltiptext">
-                        Force specific component ordering:
-                        • Leave empty for any order
-                        • '0,1' = first component, then second
-                        • '1,0' = second component, then first
-                        • Only works when components are specified
-                        
-                        Example: Components 'smart,tech' + Order '1,0' → 'techsmart...'
-                      </span>
-                    </div>
-                  </label>
-                  <input
-                    type="text"
-                    value={generationConfig.component_order ? generationConfig.component_order.join(',') : ''}
-                    onChange={(e) => {
-                      const value = e.target.value;
-                      const order = value.split(',').map(i => parseInt(i.trim())).filter(i => !isNaN(i));
-                      updateGenerationConfig({ component_order: order.length > 0 ? order : undefined });
-                    }}
-                    onKeyDown={(e) => {
-                      // Allow comma input
-                      if (e.key === ',') {
-                        e.stopPropagation();
-                      }
-                    }}
-                    className="form-input"
-                    placeholder="e.g., '0,1' or '1,0'"
-                    disabled={!generationConfig.components || generationConfig.components.length === 0}
-                  />
-                </div>
-                
-                <div>
-                  <label className="text-sm text-muted">
-                    Component Separation
-                    <div className="tooltip ml-2 inline-block">
-                      <span className="text-xs text-blue-600 cursor-help">ⓘ</span>
-                      <span className="tooltiptext">
-                        Control spacing between components:
-                        • Format: 'min,max' characters
-                        • '0,2' = 0-2 chars between components
-                        • '1,3' = 1-3 chars between components
-                        • Higher values = more spacing variation
-                        
-                        Example: '0,1' → 'cotech', 'comind'
-                        Example: '2,3' → 'coabtech', 'cospmind'
-                      </span>
-                    </div>
-                  </label>
-                  <input
-                    type="text"
-                    value={generationConfig.component_separation ? generationConfig.component_separation.join(',') : '0,3'}
-                    onChange={(e) => {
-                      const value = e.target.value;
-                      const sep = value.split(',').map(i => parseInt(i.trim())).filter(i => !isNaN(i));
-                      if (sep.length === 2) {
-                        updateGenerationConfig({ component_separation: sep });
-                      }
-                    }}
-                    onKeyDown={(e) => {
-                      // Allow comma input
-                      if (e.key === ',') {
-                        e.stopPropagation();
-                      }
-                    }}
-                    className="form-input"
-                    placeholder="e.g., '0,2' or '1,3'"
-                    disabled={!generationConfig.components || generationConfig.components.length === 0}
-                  />
-                </div>
-              </div>
+        <section className="card">
+          <div className="card-header">Shape</div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="form-group">
+              <label className="form-label">Starts with</label>
+              <input className="form-input" value={gen.starts_with} placeholder="e.g. lu"
+                onChange={e => setGen({ starts_with: e.target.value })} />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Ends with</label>
+              <input className="form-input" value={gen.ends_with} placeholder="e.g. a"
+                onChange={e => setGen({ ends_with: e.target.value })} />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Includes</label>
+              <input className="form-input" value={gen.includes} placeholder="e.g. co · an,er · tech;bio"
+                onChange={e => setGen({ includes: e.target.value })} />
+              <p className="field-help">
+                <code>a,b</code> both · <code>a;b</code> either · a <strong>space</strong> makes two words
+                (<code>co </code> + ends with <code>a</code> → “code noda”)
+              </p>
+            </div>
+            <div className="form-group">
+              <label className="form-label">Excludes</label>
+              <input className="form-input" value={gen.excludes} placeholder="e.g. x, tion"
+                onChange={e => setGen({ excludes: e.target.value })} />
+              <p className="field-help">Comma-separated substrings that may never appear.</p>
             </div>
           </div>
 
-          {/* Content Constraints */}
-          <div className="form-group">
-            <label className="form-label">Content Constraints</label>
+          <details className="advanced" open={hasComponents}>
+            <summary>Fixed components</summary>
+            <p className="field-help mb-2">
+              Parts that must appear verbatim, with Markov-sampled letters filling the gaps around them
+              (<code>co, mind</code> → “cobramind”, “mindecor”).
+            </p>
+            <div className="form-group">
+              <label className="form-label">Components</label>
+              <ListInput value={gen.components} parse={parseList} placeholder="e.g. co, mind"
+                onChange={parts => setGen({ components: parts.length ? parts : undefined })} />
+            </div>
             <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="text-sm text-muted">
-                  Starts with
-                  <span 
-                    className="ml-2 text-xs text-blue-600 cursor-help" 
-                    title="Force words to begin with specific text:&#10;• 'A' = words start with 'A'&#10;• 'neo' = words start with 'neo'&#10;• Works with components too!"
-                  >
-                    ⓘ
-                  </span>
-                </label>
-                <input
-                  type="text"
-                  value={generationConfig.starts_with || ''}
-                  onChange={(e) => updateGenerationConfig({ starts_with: e.target.value })}
-                  className="form-input"
-                  placeholder="e.g., 'A' or 'St'"
-                />
+              <div className="form-group">
+                <label className="form-label">Order <span className="text-muted">(indices)</span></label>
+                <ListInput value={gen.component_order} parse={parseInts} placeholder="any order, or e.g. 1, 0"
+                  disabled={!hasComponents}
+                  onChange={order => setGen({ component_order: order.length ? order : undefined })} />
               </div>
-              
-              <div>
-                <label className="text-sm text-muted">
-                  Ends with
-                  <span 
-                    className="ml-2 text-xs text-blue-600 cursor-help" 
-                    title="Force words to end with specific text:&#10;• 'ing' = words end with 'ing'&#10;• 'tech' = words end with 'tech'&#10;• Works with components too!"
-                  >
-                    ⓘ
-                  </span>
-                </label>
-                <input
-                  type="text"
-                  value={generationConfig.ends_with || ''}
-                  onChange={(e) => updateGenerationConfig({ ends_with: e.target.value })}
-                  className="form-input"
-                  placeholder="e.g., 'ing' or 'er'"
-                />
-              </div>
-              
-              <div>
-                <label className="text-sm text-muted">
-                  Includes
-                  <div className="tooltip ml-2 inline-block">
-                    <span className="text-xs text-blue-600 cursor-help">ⓘ</span>
-                    <span className="tooltiptext">
-                      Pattern formats:
-                      • 'x,a' = must contain BOTH x AND a
-                      • 'x;a' = must contain EITHER x OR a
-                      • 'x,a;b,c' = must contain (x AND a) OR (b AND c)
-                      
-                      Examples:
-                      - 'an,er' = both 'an' and 'er'
-                      - 'tech;bio' = either 'tech' or 'bio'
-
-                      Note: Different from Components - sampling is guided toward these substrings, they can appear anywhere
-                    </span>
-                  </div>
-                </label>
-                <input
-                  type="text"
-                  value={generationConfig.includes || ''}
-                  onChange={(e) => updateGenerationConfig({ includes: e.target.value })}
-                  onKeyDown={(e) => {
-                    // Allow comma and semicolon input
-                    if (e.key === ',' || e.key === ';') {
-                      e.stopPropagation();
-                    }
-                  }}
-                  className="form-input"
-                  placeholder="e.g., 'an,er' or 'tech;bio'"
-                />
-              </div>
-              
-              <div>
-                <label className="text-sm text-muted">
-                  Excludes
-                  <span 
-                    className="ml-2 text-xs text-blue-600 cursor-help" 
-                    title="Forbidden substrings:&#10;• 'x' = no words containing 'x'&#10;• 'tion' = no words containing 'tion'&#10;• 'th,ck' = neither 'th' nor 'ck' (comma-separated)"
-                  >
-                    ⓘ
-                  </span>
-                </label>
-                <input
-                  type="text"
-                  value={generationConfig.excludes || ''}
-                  onChange={(e) => updateGenerationConfig({ excludes: e.target.value })}
-                  className="form-input"
-                  placeholder="e.g., 'x' or 'tion'"
-                />
+              <div className="form-group">
+                <label className="form-label">Letters between <span className="text-muted">(min, max)</span></label>
+                <ListInput value={gen.component_separation || [0, 3]} parse={parseInts} placeholder="0, 3"
+                  disabled={!hasComponents}
+                  onChange={sep => { if (sep.length === 2) setGen({ component_separation: sep as [number, number] }); }} />
               </div>
             </div>
-          </div>
-        </div>
+          </details>
+        </section>
 
-        {/* Model Parameters */}
-        <div className="card">
-          <div className="card-header">Model Parameters</div>
-          
-          {/* Model Order */}
-          <div className="form-group">
-            <label className="form-label">
-              Model Order: {modelConfig.order || 3}
-              <span 
-                className="ml-2 text-xs text-blue-600 cursor-help" 
-                title="N-gram model order - how many previous characters to consider:&#10;• Order 1: Each letter depends only on the previous 1 letter&#10;• Order 2: Each letter depends on the previous 2 letters&#10;• Order 3: Each letter depends on the previous 3 letters&#10;• Higher = more realistic but less creative&#10;• Lower = more creative but less coherent&#10;• Recommended: 2-4 for most use cases"
-              >
-                ⓘ
-              </span>
+        <section className="card">
+          <div className="card-header">Novelty filters</div>
+          <div className="toggle-row">
+            <label className="checkbox-container">
+              <input type="checkbox" checked={filters.exclude_training_words}
+                onChange={e => setFilters({ exclude_training_words: e.target.checked })} />
+              <span>Drop real training words</span>
             </label>
-            <p className="text-sm text-muted mb-2">
-              How many letters to look back when predicting the next letter
-            </p>
-            <input
-              type="range"
-              min="1"
-              max="6"
-              value={modelConfig.order || 3}
-              onChange={(e) => updateModelConfig({ order: parseInt(e.target.value) })}
-              className="range-slider w-full"
-            />
-            <div className="text-sm text-muted mt-2">
-              <strong>Low (1-2):</strong> More creative, less realistic, good for abstract names<br />
-              <strong>Medium (3-4):</strong> Balanced realism and creativity, most versatile<br />
-              <strong>High (5-6):</strong> Very realistic, follows training data closely
-            </div>
-          </div>
-
-          {/* Temperature */}
-          <div className="form-group">
-            <label className="form-label">
-              Temperature (Creativity Factor): {(modelConfig.temperature || 1.0).toFixed(2)}
-              <span 
-                className="ml-2 text-xs text-blue-600 cursor-help" 
-                title="Controls sampling randomness:&#10;• 0.1-0.5: Conservative, follows common patterns&#10;• 0.8-1.2: Balanced mix of common and uncommon patterns&#10;• 1.5-3.0: Creative, explores unusual combinations&#10;• 1.0 = use training distribution exactly&#10;• Higher values = more surprising results&#10;• Use with components for creative arrangements"
-              >
-                ⓘ
-              </span>
+            <label className="checkbox-container">
+              <input type="checkbox" checked={filters.remove_duplicates}
+                onChange={e => setFilters({ remove_duplicates: e.target.checked })} />
+              <span>Drop duplicates</span>
             </label>
-            <p className="text-sm text-muted mb-2">
-              Controls randomness vs. following training patterns
-            </p>
-            <input
-              type="range"
-              min="0.1"
-              max="3.0"
-              step="0.1"
-              value={modelConfig.temperature || 1.0}
-              onChange={(e) => updateModelConfig({ temperature: parseFloat(e.target.value) })}
-              className="range-slider w-full"
-            />
-            <div className="text-sm text-muted mt-2">
-              <strong>Conservative (0.1-0.5):</strong> Safe choices, predictable patterns<br />
-              <strong>Balanced (0.8-1.2):</strong> Natural mix, good for most cases<br />
-              <strong>Creative (1.5-3.0):</strong> Surprising combinations, experimental
-            </div>
           </div>
+          <div className="form-group mt-4">
+            <label className="form-label">
+              Minimum distance from any training word: <strong>{filters.min_edit_distance || 'off'}</strong>
+            </label>
+            <input type="range" className="range-slider w-full" min={0} max={5} value={filters.min_edit_distance || 0}
+              onChange={e => setFilters({ min_edit_distance: Number(e.target.value) })} />
+            <p className="field-help">
+              Edits (insert, delete or swap a letter) needed to reach the nearest real word. 2 drops near-copies like
+              “rayquarka”; higher forces more invention but rejects more samples.
+            </p>
+          </div>
+        </section>
+      </div>
 
-          {/* Backoff */}
+      <div className="space-y-4">
+        <section className="card">
+          <div className="card-header">Model</div>
           <div className="form-group">
-            <div className="checkbox-container">
-              <input
-                type="checkbox"
-                checked={modelConfig.backoff !== false}
-                onChange={(e) => updateModelConfig({ backoff: e.target.checked })}
-              />
-              <label className="form-label">
-                Use Backoff
-                <span 
-                  className="ml-2 text-xs text-blue-600 cursor-help" 
-                  title="Intelligent fallback system:&#10;• When high-order patterns aren't found, try lower orders&#10;• Example: 'xyz' pattern not found → try 'yz' → try 'z'&#10;• Prevents generation failures with unusual constraints&#10;• Essential for component generation with tight constraints&#10;• Recommended: Keep enabled unless experimenting"
-                >
-                  ⓘ
+            <label className="form-label">Memory (order): <strong>{model.order}</strong> letters</label>
+            <input type="range" className="range-slider w-full" min={1} max={6} value={model.order}
+              onChange={e => setModel({ order: Number(e.target.value) })} />
+            <div className="scale-labels"><span>wild, less word-like</span><span>faithful, more copying</span></div>
+            <p className="field-help">How many previous letters predict the next one. 3 is the sweet spot for most lists.</p>
+          </div>
+          <div className="form-group">
+            <label className="form-label">Temperature: <strong>{model.temperature.toFixed(2)}</strong></label>
+            <input type="range" className="range-slider w-full" min={0.1} max={3} step={0.05} value={model.temperature}
+              onChange={e => setModel({ temperature: Number(e.target.value) })} />
+            <div className="scale-labels"><span>safe, common patterns</span><span>adventurous</span></div>
+            <p className="field-help">
+              1.0 samples the training statistics as-is. Higher boosts rare letter transitions, but only ones that occur
+              in the data, so names stay pronounceable.
+            </p>
+          </div>
+          <label className="checkbox-container">
+            <input type="checkbox" checked={model.backoff} onChange={e => setModel({ backoff: e.target.checked })} />
+            <span>Backoff to shorter memory for unseen letter combinations <span className="text-muted">(recommended)</span></span>
+          </label>
+        </section>
+
+        <section className="card preview-card">
+          <div className="card-header flex items-center justify-between">
+            <span>Live preview</span>
+            <button className="icon-button" onClick={() => setNonce(n => n + 1)} title="Resample">
+              <RefreshCw size={14} className={previewing ? 'spin' : ''} />
+            </button>
+          </div>
+          {previewError ? (
+            <p className="text-muted text-sm">{previewError}</p>
+          ) : (
+            <div className="preview-names">
+              {preview.map(row => (
+                <span key={row.name} className="name-chip"
+                  title={`naturalness ${row.naturalness ?? '?'}/100 · nearest training word: ${row.nearest ?? '?'} (+${row.distance ?? '?'})`}>
+                  {titleCase(row.name)}
                 </span>
-              </label>
+              ))}
             </div>
-            <p className="text-sm text-muted mb-2">
-              Fall back to simpler patterns when complex ones aren't found
-            </p>
-            <div className="text-sm text-muted">
-              <strong>Enabled:</strong> More reliable generation, handles edge cases gracefully<br />
-              <strong>Disabled:</strong> Stricter pattern matching, may fail with complex constraints
-            </div>
-          </div>
-        </div>
+          )}
+          <p className="field-help mt-2">Updates as you tweak. Hover a name to see where it came from.</p>
+        </section>
       </div>
     </div>
   );

@@ -42,6 +42,12 @@ CASES = [
     ("includes OR: co;mi + excludes=an", {}, {"includes": "co;mi", "excludes": "an"}),
     ("ends_with=a, no backoff", {"backoff": False}, {"ends_with": "a"}),
     ("ends_with=ra + min8", {}, {"ends_with": "ra", "min_length": 8}),
+    # Multi-word: a space in `includes` routes through the component sampler
+    ("two-word: includes=' '", {}, {"includes": " ", "min_length": 5, "max_length": 10}),
+    ("two-word: includes=' ' + ends_with=a", {}, {"includes": " ", "ends_with": "a",
+                                                   "min_length": 5, "max_length": 10}),
+    ("two-word: includes='co ' + ends_with=a", {}, {"includes": "co ", "ends_with": "a",
+                                                     "min_length": 5, "max_length": 11}),
 ]
 
 COMPONENT_CASES = [

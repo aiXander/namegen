@@ -68,21 +68,16 @@ starts_with="tech" + ends_with="corp" + length=8-12
 
 
 
-### 🤖 AI-Powered Quality Scoring
+### 🤖 AI Judging: statistics invent, AI judges
 
-The integrated `LLMScorer` sends batches of names to language models for intelligent evaluation:
+LLMs are bad at *inventing* names: they reach for the predictable, internet-average token. Here the Markov chains invent, and AI only judges:
 
-```
-Input: "Your task is to score name ideas for a new data startup. Here are my ideas..."
-Output: [("techflow", 4.2), ("datacore", 3.8), ("cloudnex", 4.7)]
-```
+1. **Vibe prefilter**: every name is embedded and ranked by similarity to your vibe keywords, at next to no cost. Generate thousands and send only the most on-vibe ones on.
+2. **Judge panel**: several fast models (default Claude Haiku 5.5 + GPT-6 Luna) each score every name 0–10 for sound, fit and distinctiveness, with a one-line note on what it evokes and a flag for existing brands or unfortunate meanings. The panel mean is the score.
+3. **Final round**: a stronger model compares the top ~25 head to head, ranks them, and pitches each.
+4. **Your taste**: your star ratings are sent to the judges as examples, so they calibrate to you.
 
-
-
-- **Contextual Scoring**: Evaluates names against your specific use case
-- **Example Learning**: Uses your rated names to improve scoring
-- **Batch Processing**: Efficient API usage with configurable chunk sizes
-- **Cost Tracking**: Monitors API usage and expenses
+Judging 500 names with two judges costs about $0.04.
 
 ---
 
@@ -101,8 +96,9 @@ cd react_gui && npm start
 - 📊 **Training Data Explorer** - Browse and rate 121 curated word lists
 - ⚙️ **Parameter Tuning** - Real-time adjustment of model settings
 - 🎯 **Constraint Builder** - Visual constraint configuration
-- 📈 **Results Dashboard** - Generate, rate, and export names
-- 🤖 **AI Integration** - One-click AI scoring with multiple models
+- 📈 **Results** - Keyboard triage (↑↓ to move, 1–5 to rate), search and filters, CSV export, per-name naturalness and "nearest real word"
+- 🤖 **Judge** - Brief, vibe keywords, pick your judge panel with a live cost estimate
+- ⭐ **Shortlist** - Rated names grouped by stars, with case treatments
 
 ---
 

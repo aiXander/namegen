@@ -18,7 +18,7 @@ from markov_namegen import MarkovNameGenerator, too_close_to_training
 
 def main():
     gen = MarkovNameGenerator()
-    words = gen._load_training_data()
+    words, _ = gen._load_training_data()
     print(f"training words: {len(words)}")
 
     from markov.name_generator import NameGenerator

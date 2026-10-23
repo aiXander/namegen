@@ -1,447 +1,268 @@
-import React, { useState, useEffect } from 'react';
-import { Eye, Shuffle, ChevronUp, ChevronDown } from 'lucide-react';
-import { apiService, WordList, WordListContent } from '../services/api';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Eye, Shuffle, ChevronUp, ChevronDown, Search } from 'lucide-react';
+import { apiService, Config, Weighting, WordList, WordListContent } from '../services/api';
 import StarRating from './StarRating';
 import Modal from './Modal';
 
 interface TrainingDataTabProps {
-  config: any;
-  onConfigChange: (config: any) => void;
-  selectedSources: string[];
-  setSelectedSources: (sources: string[]) => void;
-  minScore: number;
-  setMinScore: (score: number) => void;
-  maxScore: number;
-  setMaxScore: (score: number) => void;
+  config: Config;
+  patchConfig: <K extends keyof Config>(section: K, patch: Partial<NonNullable<Config[K]>>) => void;
 }
 
-const TrainingDataTab: React.FC<TrainingDataTabProps> = ({ 
-  config, 
-  onConfigChange, 
-  selectedSources, 
-  setSelectedSources, 
-  minScore, 
-  setMinScore, 
-  maxScore, 
-  setMaxScore 
-}) => {
+type SortColumn = 'name' | 'word_count' | 'rating' | 'health';
+
+const WEIGHTINGS: Record<Weighting, { label: string; help: string }> = {
+  natural: { label: 'Natural', help: 'Every word counts once, so big lists dominate the letter statistics.' },
+  balanced: { label: 'Balanced', help: 'Every selected list contributes equally, whatever its size.' },
+  rating: { label: 'By rating', help: 'Balanced, then scaled by your star rating (unrated lists count as 3★).' }
+};
+const UNRATED_STARS = 3;
+const MIX_COLORS = ['#e0a458', '#9db8c4', '#a4bd84', '#de7361', '#c49bd4', '#e9c46a', '#7fb7a4'];
+
+// Markov-health badge: green = good novel-name statistics, red = the model
+// will mostly replay training words (low branching / high memorization).
+const healthClass = (score: number) => score >= 50 ? 'health-good' : score >= 30 ? 'health-mid' : 'health-bad';
+
+const TrainingDataTab: React.FC<TrainingDataTabProps> = ({ config, patchConfig }) => {
   const [wordLists, setWordLists] = useState<WordList[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [selectedWordList, setSelectedWordList] = useState<WordListContent | null>(null);
-  const [modalOpen, setModalOpen] = useState(false);
-  const [viewMode, setViewMode] = useState<'sorted' | 'random'>('sorted');
-  const [sortColumn, setSortColumn] = useState<'name' | 'word_count' | 'rating' | 'health'>('name');
-  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+  const [viewing, setViewing] = useState<WordListContent | null>(null);
+  const [shuffled, setShuffled] = useState(false);
+  const [sortColumn, setSortColumn] = useState<SortColumn>('name');
+  const [sortDesc, setSortDesc] = useState(false);
   const [minHealth, setMinHealth] = useState(0);
+  const [query, setQuery] = useState('');
+  const [range, setRange] = useState<[number, number]>([
+    config.training_data?.score_range?.min ?? 3, config.training_data?.score_range?.max ?? 5]);
 
-  useEffect(() => {
-    loadWordLists();
-  }, []);
+  const selected = useMemo(() => config.training_data?.sources || [], [config.training_data?.sources]);
+  const weighting: Weighting = config.training_data?.weighting || 'natural';
+  const setSources = (sources: string[]) => patchConfig('training_data', { sources });
 
-
-
-  const loadWordLists = async () => {
+  const load = async () => {
     try {
       setLoading(true);
-      const lists = await apiService.getWordLists();
-      setWordLists(lists);
+      setError(null);
+      setWordLists(await apiService.getWordLists());
     } catch (err) {
-      setError('Failed to load word lists');
-      console.error(err);
+      setError('Failed to load word lists. Is the API server running?');
     } finally {
       setLoading(false);
     }
   };
+  useEffect(() => { load(); }, []);
 
-  const handleWordListToggle = (filename: string) => {
-    const newSources = selectedSources.includes(filename)
-      ? selectedSources.filter((s: string) => s !== filename)
-      : [...selectedSources, filename];
-    
-    setSelectedSources(newSources);
-  };
+  const visible = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    const key = (wl: WordList): string | number =>
+      sortColumn === 'name' ? wl.display_name.toLowerCase()
+        : sortColumn === 'word_count' ? wl.word_count
+          : sortColumn === 'rating' ? wl.rating
+            : wl.health?.score ?? -1;
+    return wordLists
+      .filter(wl => (wl.health?.score ?? 0) >= minHealth && (!q || wl.display_name.toLowerCase().includes(q)))
+      .sort((a, b) => {
+        const cmp = key(a) < key(b) ? -1 : key(a) > key(b) ? 1 : 0;
+        return sortDesc ? -cmp : cmp;
+      });
+  }, [wordLists, query, minHealth, sortColumn, sortDesc]);
 
-  const handleSelectAll = () => {
-    // Only select lists currently visible (i.e. passing the Markov-health filter)
-    const allFilenames = getSortedWordLists().map(wl => wl.filename);
-    setSelectedSources(allFilenames);
-  };
+  // Share of the training statistics each selected list ends up with
+  const mix = useMemo(() => {
+    const chosen = wordLists.filter(wl => selected.includes(wl.filename) && wl.word_count > 0);
+    const weight = (wl: WordList) =>
+      weighting === 'natural' ? wl.word_count : weighting === 'balanced' ? 1 : (wl.rating || UNRATED_STARS);
+    const total = chosen.reduce((sum, wl) => sum + weight(wl), 0);
+    return chosen
+      .map(wl => ({ name: wl.display_name, share: total ? weight(wl) / total : 0 }))
+      .sort((a, b) => b.share - a.share);
+  }, [wordLists, selected, weighting]);
 
-  const handleDeselectAll = () => {
-    setSelectedSources([]);
-  };
+  const totalWords = wordLists.filter(wl => selected.includes(wl.filename)).reduce((s, wl) => s + wl.word_count, 0);
 
-  const handleSelectByScore = () => {
-    const filteredFilenames = getSortedWordLists()
-      .filter(wl => wl.rating >= minScore && wl.rating <= maxScore)
-      .map(wl => wl.filename);
-    
-    setSelectedSources(filteredFilenames);
-  };
+  const toggle = (filename: string) =>
+    setSources(selected.includes(filename) ? selected.filter(s => s !== filename) : [...selected, filename]);
 
-  const handleRateWordList = async (filename: string, rating: number) => {
+  const rate = async (filename: string, rating: number) => {
+    setWordLists(prev => prev.map(wl => wl.filename === filename ? { ...wl, rating } : wl));
     try {
       await apiService.rateWordList(filename, rating);
-      // Update local state
-      setWordLists(prev => prev.map(wl => 
-        wl.filename === filename ? { ...wl, rating } : wl
-      ));
     } catch (err) {
       console.error('Failed to rate word list:', err);
     }
   };
 
-  const handleViewWordList = async (filename: string) => {
+  const view = async (filename: string) => {
     try {
-      const content = await apiService.getWordListContent(filename);
-      setSelectedWordList(content);
-      setModalOpen(true);
+      setViewing(await apiService.getWordListContent(filename));
     } catch (err) {
       console.error('Failed to load word list content:', err);
     }
   };
 
-  const handleSort = (column: 'name' | 'word_count' | 'rating' | 'health') => {
-    if (sortColumn === column) {
-      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
-    } else {
-      setSortColumn(column);
-      setSortDirection('asc');
+  const sortBy = (column: SortColumn) => {
+    if (column === sortColumn) setSortDesc(d => !d);
+    else { setSortColumn(column); setSortDesc(column !== 'name'); }
+  };
+
+  const viewedWords = useMemo(() => {
+    if (!viewing) return [];
+    const words = [...viewing.words];
+    if (!shuffled) return words.sort();
+    for (let i = words.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [words[i], words[j]] = [words[j], words[i]];
     }
-  };
-
-  const getSortedWordLists = () => {
-    const sorted = [...wordLists].sort((a, b) => {
-      let aValue, bValue;
-      
-      switch (sortColumn) {
-        case 'name':
-          aValue = a.display_name.toLowerCase();
-          bValue = b.display_name.toLowerCase();
-          break;
-        case 'word_count':
-          aValue = a.word_count;
-          bValue = b.word_count;
-          break;
-        case 'rating':
-          aValue = a.rating;
-          bValue = b.rating;
-          break;
-        case 'health':
-          aValue = a.health?.score ?? -1;
-          bValue = b.health?.score ?? -1;
-          break;
-        default:
-          return 0;
-      }
-      
-      if (aValue < bValue) return sortDirection === 'asc' ? -1 : 1;
-      if (aValue > bValue) return sortDirection === 'asc' ? 1 : -1;
-      return 0;
-    });
-    
-    return sorted.filter(wl => (wl.health?.score ?? 0) >= minHealth);
-  };
-
-  // Markov-health badge: green = good novel-name statistics, red = model will mostly
-  // replay training words (low branching factor / high memorization).
-  const healthColor = (score: number) => {
-    if (score >= 50) return '#22c55e';
-    if (score >= 30) return '#eab308';
-    return '#ef4444';
-  };
-
-  const healthTooltip = (wl: WordList) => {
-    if (!wl.health) return 'No stats available';
-    const h = wl.health;
-    return `Branching factor: ${(h.branching_factor * 100).toFixed(0)}% of contexts have ≥2 successors\n` +
-      `Memorization: ${(h.memorization_rate * 100).toFixed(0)}% of generations replay training words\n` +
-      `${h.unique_contexts} unique contexts / ${h.unique_words} unique words`;
-  };
-
-  const getTotalSelectedWords = () => {
-    return wordLists
-      .filter(wordList => selectedSources.includes(wordList.filename))
-      .reduce((total, wordList) => total + wordList.word_count, 0);
-  };
-
-  const getDisplayedWords = () => {
-    if (!selectedWordList) return [];
-    const words = [...selectedWordList.words];
-    return viewMode === 'sorted' ? words.sort() : words.sort(() => Math.random() - 0.5);
-  };
+    return words;
+  }, [viewing, shuffled]);
 
   if (loading) {
-    return (
-      <div className="text-center py-8">
-        <div className="loading-spinner mx-auto"></div>
-        <p className="text-muted mt-2">Loading word lists...</p>
-      </div>
-    );
+    return <div className="text-center py-8"><div className="loading-spinner mx-auto" /><p className="text-muted mt-2">Loading word lists…</p></div>;
   }
-
   if (error) {
-    return (
-      <div className="text-center py-8">
-        <p className="error-message">{error}</p>
-        <button className="btn btn-primary mt-4" onClick={loadWordLists}>
-          Retry
-        </button>
-      </div>
-    );
+    return <div className="text-center py-8"><p className="error-message">{error}</p><button className="btn btn-primary mt-4" onClick={load}>Retry</button></div>;
   }
 
+  const th = (column: SortColumn, label: string, className = '') => (
+    <th className={`sortable ${className}`} onClick={() => sortBy(column)}>
+      <span className="th-inner">{label}{sortColumn === column && (sortDesc ? <ChevronDown size={13} /> : <ChevronUp size={13} />)}</span>
+    </th>
+  );
 
   return (
-    <div>
-      {/* Total training words indicator */}
-      <div className="card mb-4">
-        <div className="flex items-center gap-3">
-          <span className="text-lg font-semibold text-primary">
-            Total Training Words: {getTotalSelectedWords().toLocaleString()}
-          </span>
-          <span className="text-sm text-muted">
-            ({selectedSources.length} file{selectedSources.length !== 1 ? 's' : ''} selected)
-          </span>
-        </div>
-      </div>
-
-      {/* Score range selection */}
-      <div className="card mb-4">
-        <div className="card-header">Select by Score Range</div>
-        <div className="flex items-center gap-4 mb-4">
-          <div style={{ width: '50%' }}>
-            <div className="dual-range-container">
-              <div className="dual-range-track">
-                <div 
-                  className="dual-range-progress"
-                  style={{
-                    left: `${(minScore / 5) * 100}%`,
-                    right: `${100 - (maxScore / 5) * 100}%`
-                  }}
-                />
-              </div>
-              <input
-                type="range"
-                min="0"
-                max="5"
-                value={minScore}
-                onChange={(e) => {
-                  const value = parseInt(e.target.value);
-                  if (value <= maxScore) {
-                    setMinScore(value);
-                  }
-                }}
-                className="dual-range-slider"
-                style={{ zIndex: 1 }}
-              />
-              <input
-                type="range"
-                min="0"
-                max="5"
-                value={maxScore}
-                onChange={(e) => {
-                  const value = parseInt(e.target.value);
-                  if (value >= minScore) {
-                    setMaxScore(value);
-                  }
-                }}
-                className="dual-range-slider"
-                style={{ zIndex: 2 }}
-              />
-            </div>
+    <div className="space-y-4">
+      <section className="card">
+        <div className="sources-summary">
+          <div>
+            <div className="big-number">{selected.length} <span>lists</span></div>
+            <div className="text-muted text-sm">{totalWords.toLocaleString()} training words</div>
           </div>
-          <span className="text-sm font-medium whitespace-nowrap">
-            Range: {minScore} - {maxScore}
-          </span>
-          <button className="btn btn-primary" onClick={handleSelectByScore}>
-            Apply Range
-          </button>
-          <button className="btn btn-secondary" onClick={handleSelectAll}>
-            Select All
-          </button>
-          <button className="btn btn-secondary" onClick={handleDeselectAll}>
-            Deselect All
-          </button>
+          <div className="flex-1">
+            <div className="flex items-center gap-3 mb-2">
+              <span className="form-label" style={{ margin: 0 }}>Mix</span>
+              <div className="segmented">
+                {(Object.keys(WEIGHTINGS) as Weighting[]).map(w => (
+                  <button key={w} className={weighting === w ? 'active' : ''}
+                    onClick={() => patchConfig('training_data', { weighting: w })}>{WEIGHTINGS[w].label}</button>
+                ))}
+              </div>
+              <span className="text-muted text-sm">{WEIGHTINGS[weighting].help}</span>
+            </div>
+            {mix.length > 0 ? (
+              <>
+                <div className="mix-bar">
+                  {mix.map((m, i) => (
+                    <span key={m.name} title={`${m.name}: ${(m.share * 100).toFixed(1)}%`}
+                      style={{ width: `${m.share * 100}%`, background: MIX_COLORS[i % MIX_COLORS.length], opacity: i < MIX_COLORS.length ? 1 : 0.5 }} />
+                  ))}
+                </div>
+                <div className="mix-legend">
+                  {mix.slice(0, 6).map((m, i) => (
+                    <span key={m.name}><i style={{ background: MIX_COLORS[i] }} />{m.name} {(m.share * 100).toFixed(0)}%</span>
+                  ))}
+                  {mix.length > 6 && <span className="text-muted">+{mix.length - 6} more</span>}
+                </div>
+              </>
+            ) : (
+              <p className="text-muted text-sm">Select lists below whose words <em>sound</em> like the names you want.</p>
+            )}
+          </div>
         </div>
-      </div>
+      </section>
 
-      {/* Markov health filter */}
-      <div className="card mb-4">
-        <div className="card-header">Filter by Markov Health</div>
-        <div className="flex items-center gap-4">
-          <input
-            type="range"
-            min="0"
-            max="100"
-            value={minHealth}
-            onChange={(e) => setMinHealth(parseInt(e.target.value))}
-            style={{ width: '50%' }}
-          />
-          <span className="text-sm font-medium whitespace-nowrap">
-            Min health: {minHealth}
-          </span>
-          <span className="text-sm text-muted">
-            (hides lists whose statistics mostly replay training words)
-          </span>
+      <section className="card">
+        <div className="sources-controls">
+          <div className="search-box">
+            <Search size={14} />
+            <input value={query} onChange={e => setQuery(e.target.value)} placeholder="Search lists…" />
+          </div>
+          <div className="control-cluster">
+            <span className="text-sm text-muted">Rated</span>
+            <select className="form-select compact-select" value={range[0]} onChange={e => setRange([Number(e.target.value), Math.max(range[1], Number(e.target.value))])}>
+              {[0, 1, 2, 3, 4, 5].map(n => <option key={n} value={n}>{n}★</option>)}
+            </select>
+            <span className="text-sm text-muted">to</span>
+            <select className="form-select compact-select" value={range[1]} onChange={e => setRange([Math.min(range[0], Number(e.target.value)), Number(e.target.value)])}>
+              {[0, 1, 2, 3, 4, 5].map(n => <option key={n} value={n}>{n}★</option>)}
+            </select>
+            <button className="btn btn-secondary btn-small" onClick={() => {
+              patchConfig('training_data', {
+                sources: visible.filter(wl => wl.rating >= range[0] && wl.rating <= range[1]).map(wl => wl.filename),
+                score_range: { min: range[0], max: range[1] }
+              });
+            }}>Select</button>
+          </div>
+          <div className="control-cluster">
+            <span className="text-sm text-muted" title="Hide lists whose statistics mostly replay their own words">Min health {minHealth}</span>
+            <input type="range" className="range-slider" style={{ width: 110 }} min={0} max={100} value={minHealth}
+              onChange={e => setMinHealth(Number(e.target.value))} />
+          </div>
+          <div className="toolbar-spacer" />
+          <button className="btn btn-ghost btn-small" onClick={() => setSources(Array.from(new Set([...selected, ...visible.map(wl => wl.filename)])))}>Select shown</button>
+          <button className="btn btn-ghost btn-small" onClick={() => setSources([])}>Clear</button>
         </div>
-      </div>
 
-      {/* Word lists table */}
-      <div className="max-h-96 overflow-y-auto">
-        <table className="w-full">
-          <thead className="sticky top-0" style={{ zIndex: 20 }}>
-            <tr>
-              <th className="text-left py-3 px-4 w-12">
-                <span className="text-sm font-medium text-primary">Select</span>
-              </th>
-              <th className="text-left py-3 px-4 w-24">
-                <span className="text-sm font-medium text-primary">View</span>
-              </th>
-              <th 
-                className="text-left py-3 px-4 cursor-pointer hover:bg-bg-hover"
-                onClick={() => handleSort('name')}
-              >
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium text-primary">Name</span>
-                  {sortColumn === 'name' && (
-                    sortDirection === 'asc' ? <ChevronUp size={14} /> : <ChevronDown size={14} />
-                  )}
-                </div>
-              </th>
-              <th 
-                className="text-left py-3 px-4 cursor-pointer hover:bg-bg-hover w-32"
-                onClick={() => handleSort('word_count')}
-              >
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium text-primary">Word Count</span>
-                  {sortColumn === 'word_count' && (
-                    sortDirection === 'asc' ? <ChevronUp size={14} /> : <ChevronDown size={14} />
-                  )}
-                </div>
-              </th>
-              <th
-                className="text-left py-3 px-4 cursor-pointer hover:bg-bg-hover w-28"
-                onClick={() => handleSort('health')}
-              >
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium text-primary">Health</span>
-                  {sortColumn === 'health' && (
-                    sortDirection === 'asc' ? <ChevronUp size={14} /> : <ChevronDown size={14} />
-                  )}
-                </div>
-              </th>
-              <th
-                className="text-left py-3 px-4 cursor-pointer hover:bg-bg-hover w-32"
-                onClick={() => handleSort('rating')}
-              >
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium text-primary">Rating</span>
-                  {sortColumn === 'rating' && (
-                    sortDirection === 'asc' ? <ChevronUp size={14} /> : <ChevronDown size={14} />
-                  )}
-                </div>
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {getSortedWordLists().map((wordList) => {
-              const isSelected = selectedSources.includes(wordList.filename);
-              return (
-                <tr key={wordList.filename} className={`border-b border-border-color hover:bg-bg-hover ${isSelected ? 'selected-row' : ''}`}>
-                  <td className="py-3 px-4">
-                    <input
-                      type="checkbox"
-                      checked={isSelected}
-                      onChange={() => handleWordListToggle(wordList.filename)}
-                      className="w-4 h-4"
-                    />
-                  </td>
-                  <td className="py-3 px-4">
-                    <button
-                      className="btn btn-small btn-secondary"
-                      onClick={() => handleViewWordList(wordList.filename)}
-                    >
-                      <Eye size={14} />
-                      View
-                    </button>
-                  </td>
-                  <td className="py-3 px-4">
-                    <span className="font-medium">{wordList.display_name}</span>
-                  </td>
-                  <td className="py-3 px-4">
-                    <span className="text-sm">{wordList.word_count.toLocaleString()}</span>
-                  </td>
-                  <td className="py-3 px-4">
-                    {wordList.health ? (
-                      <span
-                        title={healthTooltip(wordList)}
-                        style={{
-                          display: 'inline-block',
-                          minWidth: '2.5rem',
-                          textAlign: 'center',
-                          padding: '2px 8px',
-                          borderRadius: '9999px',
-                          fontSize: '0.8rem',
-                          fontWeight: 600,
-                          color: '#fff',
-                          backgroundColor: healthColor(wordList.health.score),
-                          cursor: 'help',
-                        }}
-                      >
-                        {wordList.health.score}
-                      </span>
-                    ) : (
-                      <span className="text-sm text-muted">—</span>
-                    )}
-                  </td>
-                  <td className="py-3 px-4">
-                    <StarRating
-                      rating={wordList.rating}
-                      onRate={(rating) => handleRateWordList(wordList.filename, rating)}
-                      size="small"
-                    />
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
+        <div className="results-table-wrap tall">
+          <table className="results-table">
+            <thead>
+              <tr>
+                <th className="col-index" />
+                {th('name', 'List')}
+                {th('word_count', 'Words', 'col-num')}
+                {th('health', 'Health', 'col-num')}
+                {th('rating', 'Your rating')}
+                <th />
+              </tr>
+            </thead>
+            <tbody>
+              {visible.map(wl => {
+                const isSelected = selected.includes(wl.filename);
+                const h = wl.health;
+                return (
+                  <tr key={wl.filename} className={`result-row ${isSelected ? 'selected-row' : ''}`} onClick={() => toggle(wl.filename)}>
+                    <td className="col-index">
+                      <input type="checkbox" checked={isSelected} onChange={() => toggle(wl.filename)} onClick={e => e.stopPropagation()} />
+                    </td>
+                    <td><span className="font-medium">{wl.display_name}</span></td>
+                    <td className="col-num mono">{wl.word_count.toLocaleString()}</td>
+                    <td className="col-num">
+                      {h ? (
+                        <span className={`health-badge ${healthClass(h.score)}`}
+                          title={`Branching: ${(h.branching_factor * 100).toFixed(0)}% of contexts have ≥2 possible next letters\n` +
+                            `Memorization: ${(h.memorization_rate * 100).toFixed(0)}% of samples replay a real word\n` +
+                            `${h.unique_contexts} contexts / ${h.unique_words} unique words`}>
+                          {h.score}
+                        </span>
+                      ) : <span className="text-muted">—</span>}
+                    </td>
+                    <td onClick={e => e.stopPropagation()}>
+                      <StarRating rating={wl.rating} onRate={r => rate(wl.filename, r)} />
+                    </td>
+                    <td onClick={e => e.stopPropagation()}>
+                      <button className="icon-button" title="View words" onClick={() => view(wl.filename)}><Eye size={14} /></button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </section>
 
-      {/* Word list content modal */}
-      <Modal
-        isOpen={modalOpen}
-        onClose={() => setModalOpen(false)}
-        title={`View Word List - ${selectedWordList?.filename.replace('_', ' ').replace('.txt', '')}`}
-      >
-        {selectedWordList && (
+      <Modal isOpen={!!viewing} onClose={() => setViewing(null)}
+        title={viewing ? viewing.filename.replace(/_/g, ' ').replace('.txt', '') : ''}>
+        {viewing && (
           <div>
             <div className="flex items-center gap-4 mb-4">
-              <span className="text-sm text-muted">
-                Total words: {selectedWordList.total_count}
-              </span>
-              <div className="flex gap-2">
-                <button
-                  className={`btn btn-small ${viewMode === 'sorted' ? 'btn-primary' : 'btn-secondary'}`}
-                  onClick={() => setViewMode('sorted')}
-                >
-                  Sorted
-                </button>
-                <button
-                  className={`btn btn-small ${viewMode === 'random' ? 'btn-primary' : 'btn-secondary'}`}
-                  onClick={() => setViewMode('random')}
-                >
-                  <Shuffle size={14} />
-                  Random
-                </button>
+              <span className="text-sm text-muted">{viewing.total_count.toLocaleString()} words</span>
+              <div className="segmented">
+                <button className={!shuffled ? 'active' : ''} onClick={() => setShuffled(false)}>Sorted</button>
+                <button className={shuffled ? 'active' : ''} onClick={() => setShuffled(true)}><Shuffle size={12} /> Shuffled</button>
               </div>
             </div>
-            <div className="bg-primary border border-gray-600 rounded p-4 max-h-64 overflow-y-auto">
-              <pre className="text-sm whitespace-pre-wrap">
-                {getDisplayedWords().join('\n')}
-              </pre>
+            <div className="word-list-view">
+              {viewedWords.map((word, i) => <span key={i}>{word}</span>)}
             </div>
           </div>
         )}

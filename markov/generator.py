@@ -1,11 +1,19 @@
-from typing import List, Optional, Tuple
+import math
+from typing import List, Optional, Sequence, Tuple
 from .markov_model import MarkovModel
 from .constraint_sampler import ConstraintSampler, GenerationConstraints
 from .multi_component_sampler import MultiComponentSampler, ComponentConstraints
 
 
+# Stupid-backoff penalty per order dropped when scoring a name's likelihood,
+# and the probability floor for transitions no order has ever seen.
+BACKOFF_PENALTY = 0.4
+UNSEEN_PROBABILITY = 1e-4
+
+
 class Generator:
-    def __init__(self, data: List[str], order: int, temperature: float, backoff: bool = False):
+    def __init__(self, data: List[str], order: int, temperature: float, backoff: bool = False,
+                 weights: Optional[Sequence[float]] = None):
         assert data is not None
         assert order >= 1
         assert temperature >= 0
@@ -33,10 +41,10 @@ class Generator:
             # Create models from highest to lowest order
             for i in range(order):
                 model_order = order - i
-                self.models.append(MarkovModel(data.copy(), model_order, temperature, domain))
+                self.models.append(MarkovModel(data, model_order, temperature, domain, weights))
         else:
             # Create single model of specified order
-            self.models.append(MarkovModel(data.copy(), order, temperature, domain))
+            self.models.append(MarkovModel(data, order, temperature, domain, weights))
         
         # Samplers get the full model list (highest order first) so they can
         # back off to lower-order models when a context is unseen
@@ -55,6 +63,33 @@ class Generator:
         
         return word
     
+    def log_likelihood(self, name: str) -> float:
+        """Mean log2-probability per transition of `name` under the *training*
+        distribution (temperature-independent), end-of-word included.
+
+        Uses stupid backoff: an unseen context or zero-probability transition
+        drops to the next order at a BACKOFF_PENALTY discount. Spaces split a
+        multi-word name into independently scored words. Higher (closer to 0)
+        = more like the training data.
+        """
+        total = 0.0
+        transitions = 0
+        for word in name.split():
+            padded = "#" * self.order + word + "#"
+            for i in range(self.order, len(padded)):
+                total += math.log2(self._transition_probability(padded[:i], padded[i]))
+                transitions += 1
+        return total / transitions if transitions else math.log2(UNSEEN_PROBABILITY)
+
+    def _transition_probability(self, history: str, char: str) -> float:
+        discount = 1.0
+        for model in self.models:
+            p = model.probability(history[-model.order:], char)
+            if p:
+                return discount * p
+            discount *= BACKOFF_PENALTY
+        return UNSEEN_PROBABILITY
+
     def _get_letter(self, word: str) -> Optional[str]:
         """Generate next letter in word, backing off to lower-order models
         when the current context was never observed.

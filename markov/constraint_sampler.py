@@ -35,6 +35,17 @@ TERMINATION_BIAS = 4.0
 INCLUDES_BOOST = 8.0
 
 
+# Quote characters users tend to copy in from the GUI's quoted examples
+# ('co,mind'). They are never part of a lowercased name, so requiring one as a
+# substring just guarantees zero results — strip them from every token instead.
+_QUOTE_CHARS = "\"'`‘’“”"
+
+
+def dequote(text: str) -> str:
+    """Drop stray quote characters so 'co' (typed with the quotes) means co."""
+    return "".join(ch for ch in text if ch not in _QUOTE_CHARS)
+
+
 def parse_includes_groups(includes_pattern: str) -> List[List[str]]:
     """Parse an includes pattern into OR-groups of AND-tokens.
 
@@ -42,7 +53,7 @@ def parse_includes_groups(includes_pattern: str) -> List[List[str]]:
     """
     groups = []
     for group in includes_pattern.split(';'):
-        tokens = [token.strip() for token in group.split(',') if token.strip()]
+        tokens = [dequote(token).strip() for token in group.split(',') if dequote(token).strip()]
         if tokens:
             groups.append(tokens)
     return groups
@@ -58,8 +69,8 @@ def meets_includes_constraint(word: str, includes_pattern: str) -> bool:
 
 def parse_excludes_tokens(excludes_pattern: str) -> List[str]:
     """Parse forbidden substrings; ',' and ';' both separate multiple tokens."""
-    return [token.strip() for token in excludes_pattern.replace(';', ',').split(',')
-            if token.strip()]
+    return [dequote(token).strip() for token in excludes_pattern.replace(';', ',').split(',')
+            if dequote(token).strip()]
 
 
 @dataclass
@@ -74,11 +85,12 @@ class GenerationConstraints:
     regex_pattern: Optional[str] = None
 
     def __post_init__(self):
-        """Ensure all text constraints are lowercase"""
-        self.starts_with = self.starts_with.strip().lower()
-        self.ends_with = self.ends_with.strip().lower()
-        self.includes = self.includes.strip().lower()
-        self.excludes = self.excludes.strip().lower()
+        """Ensure all text constraints are lowercase and free of stray quotes
+        (users copy the quotes from the GUI's quoted examples)."""
+        self.starts_with = dequote(self.starts_with).strip().lower()
+        self.ends_with = dequote(self.ends_with).strip().lower()
+        self.includes = dequote(self.includes).strip().lower()
+        self.excludes = dequote(self.excludes).strip().lower()
 
     def includes_groups(self) -> List[List[str]]:
         return parse_includes_groups(self.includes)

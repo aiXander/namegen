@@ -74,7 +74,62 @@ components, 0 at boundaries; `starts_with`/`ends_with` are pinned fixed parts)
 each gap segment with the *real accumulated word* as Markov context and gating
 each junction into a fixed part on plausibility. Characters *inside*
 user-given components are exempt from plausibility — users may demand
-components the training data could never produce.
+components the training data could never produce. `includes` still steers the
+gap-filling (same guide-token boost as single-word mode); correctness is the
+posterior `_validate`'s job either way.
+
+## Multi-word mode (a space in `includes`)
+
+The model's alphabet has **no space** (cleaned word lists are one word per
+line), so the constraint sampler can never *emit* a space — that's why
+`includes=' '` used to silently return nothing (the space was also stripped by
+`GenerationConstraints.__post_init__`/`parse_includes_groups`). Two-word output
+is therefore handled by the component sampler, which *places literals*:
+
+- A space in `includes` sets `ComponentConstraints.word_breaks` (one break →
+  two words) and is stripped from the includes tokens (`'co '` → token `co` +
+  one break). `NameGenerator.generate_name` reroutes any space-bearing
+  `includes` to the component path and skips the single-word fallback (which
+  could never produce the space).
+- `_insert_separators` drops `word_breaks` literal `" "` parts at interior
+  slots of the arrangement (never two adjacent → never an empty word).
+- Building across a separator **resets the Markov context to fresh
+  `#`-padding** — each space starts a brand-new word, so word 2 is sampled as a
+  word-initial Markov walk, not as a continuation of word 1. Junction
+  plausibility is skipped *into* a space (the model has no transition for it)
+  but still enforced when a real part begins the next word.
+- `MIN_WORD_LEN` (2) is forced on each side of every break via the gap minimums
+  so you never get `x noda`. `_validate` re-checks: exactly `word_breaks`
+  spaces, no empty word, and the usual length/`includes`/`ends_with`/excludes
+  over the whole joined string.
+
+Worked example: `includes='co ' + ends_with='a'` → fixed parts `[" ", "a"]`,
+word 1 = a guided gap (lands `co`), word 2 = gap + pinned `a` → `code noda`,
+`temp coa`. Note the space counts toward length — bump `max_length` (a 2+2
+two-word name needs ≥5).
+
+## Source weighting (`training_data.weighting`)
+
+Selected lists are concatenated, so with `natural` weighting a 40k-word list
+drowns a 100-word one. `source_weights()` in `markov_namegen.py` gives every
+word a weight: `balanced` = equal total mass per list, `rating` = balanced ×
+the list's star rating (unrated = 3). Weights are normalised so total mass
+equals the natural word count, so temperature/backoff behave identically in
+every mode. `MarkovModel` stores observations as weighted counts
+(`context -> {char: weight}`); with no weights the chains are bit-identical to
+the old `Counter`-based model (verified 2026-10). The API's generator cache key
+includes the weighting mode, and the ratings when weighting by rating.
+
+## Naturalness (`NameGenerator.naturalness`)
+
+A free per-name fluency score (0–100) shown in the GUI's Natural column:
+`Generator.log_likelihood` = mean log2 P per transition under the *untempered*
+training distribution (stupid backoff, 0.4 per order dropped; floor 1e-4),
+turned into a percentile against ~1000 **novel** names sampled from that same
+distribution at T=1. Don't calibrate against the training words themselves:
+they're in-sample, so every novel name ranked ~0 (the first attempt did
+exactly that). Multi-word names skip 1–2 letter words (forced fragments like
+`co`). `scripts/test_scoring.py` guards the calibration.
 
 ## Temperature semantics (`markov_model.py`)
 
@@ -94,8 +149,11 @@ ending in a" take ~30s was the `min_edit_distance` filter: a pure-Python
 Levenshtein DP against the *entire* training set per accepted candidate
 (~200ms each). Fixed by `too_close_to_training()` in `markov_namegen.py`,
 which uses rapidfuzz's C++ Levenshtein with `score_cutoff=min_distance-1`
-(banded DP + per-pair early abort): 20s → 0.3s end-to-end. Both the API
-(`should_keep_name`) and CLI (`_filter_names`) route through it.
+(banded DP + per-pair early abort): 20s → 0.3s end-to-end. The CLI
+(`_filter_names`) still routes through it; the API instead calls
+`nearest_training_word()` once per accepted name (full rapidfuzz scan, ~2.5ms
+against all 36k words) and reuses that distance for both the filter and the
+GUI's "From" column.
 
 If generation ever feels slow again, run the profiler first — don't assume
 the sampler. Parallel/threaded sampling was considered and rejected: the
@@ -107,11 +165,14 @@ would add overhead, not speed.
 - `uv run scripts/test_constraints.py` — every emitted name must satisfy every
   constraint; infeasible combos must return `[]` in <0.5s; edge params
   (T=0/0.01/3, order 1/5, no backoff) must not crash.
+- `uv run scripts/test_scoring.py` — source weighting, naturalness
+  calibration, judge-panel aggregation (no network).
 - `uv run scripts/profile_generation.py` — end-to-end timing split between
   sampling and filtering (uses current `config.yaml`).
 - `uv run scripts/benchmark_sampling.py` — per-attempt success rates and
   unique-name yield per constraint combo. Reference numbers (2026-06, ~22k
   training words): plain ~99%, `ends_with=a` ~92%, `includes=co` ~41%,
-  `includes=co+ends_with=a` ~35%, components ~100%.
+  `includes=co+ends_with=a` ~35%, components ~100%. Multi-word (~7.5k cleaned
+  words): `includes=' '` ~100%, `+ends_with=a` ~75%, `'co '+ends_with=a` ~19%.
   Note: the benchmark reads `config.yaml` for training sources, which the GUI
   mutates — pin sources when comparing runs.

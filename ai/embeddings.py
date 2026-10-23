@@ -15,11 +15,13 @@ resonating with the other anchors.
 """
 
 import asyncio
-import math
+import sqlite3
 from typing import Callable, Dict, List, Tuple, Any, Optional
 
+import numpy as np
+
 from ai.llm import make_async_openrouter_client, _get_nested
-from ai.utils import get_cache_path, load_json, save_json, ensure_dir, hash_text
+from ai.utils import get_cache_path, load_json, ensure_dir, hash_text
 from ai.cost_tracker import get_cost_tracker
 
 # Progress callback signature: (texts_embedded_so_far, total_texts).
@@ -35,8 +37,9 @@ DEFAULT_EMBEDDING_MODEL = "google/gemini-embedding-2"
 EMBED_BATCH_SIZE = 100
 
 # Batches in flight at once. Batches are independent requests, so issuing them
-# concurrently cuts wall time to roughly the slowest single batch.
-MAX_CONCURRENT_BATCHES = 8
+# concurrently cuts wall time to roughly the slowest single batch. (At 8, a
+# 3000-name run with text-embedding-3-large took ~35s.)
+MAX_CONCURRENT_BATCHES = 16
 
 # Retries per batch on transient errors (rate limits, 5xx, connection blips).
 MAX_RETRIES = 3
@@ -54,21 +57,64 @@ EMBED_REQUEST_TIMEOUT = 30.0
 SOFTMAX_TEMPERATURE = 0.1
 
 
-def _softmax_pool(sims: List[float], tau: float = SOFTMAX_TEMPERATURE) -> float:
-    """Softmax-weighted average of similarities (tau->0: max, tau->inf: mean)."""
-    m = max(sims)  # subtract max for numerical stability
-    weights = [math.exp((s - m) / tau) for s in sims]
-    total = sum(weights)
-    return sum(w * s for w, s in zip(weights, sims)) / total
+def softmax_pool(sims: np.ndarray, tau: float = SOFTMAX_TEMPERATURE) -> np.ndarray:
+    """Row-wise softmax-weighted average of similarities
+    (tau->0: max, tau->inf: mean). ``sims`` is (names, anchors)."""
+    weights = np.exp((sims - sims.max(axis=1, keepdims=True)) / tau)
+    return (weights * sims).sum(axis=1) / weights.sum(axis=1)
 
 
-def _cosine(a: List[float], b: List[float]) -> float:
-    dot = sum(x * y for x, y in zip(a, b))
-    na = math.sqrt(sum(x * x for x in a))
-    nb = math.sqrt(sum(x * x for x in b))
-    if na == 0.0 or nb == 0.0:
-        return 0.0
-    return dot / (na * nb)
+def _unit_rows(vectors: List[List[float]]) -> np.ndarray:
+    matrix = np.asarray(vectors, dtype=np.float32)
+    norms = np.linalg.norm(matrix, axis=1, keepdims=True)
+    return matrix / np.where(norms == 0, 1, norms)
+
+
+class EmbeddingStore:
+    """Embedding cache: one SQLite file of float32 blobs.
+
+    Replaces the old one-JSON-file-per-vector cache (~48KB of text per vector:
+    ~19k files / ~900MB, and ~2s just to parse 3000 of them). Vectors still in
+    that legacy directory are migrated lazily on first read.
+    """
+
+    def __init__(self, cache_dir: str = ".cache"):
+        root = ensure_dir(cache_dir)
+        self.path = root / "embeddings.sqlite"
+        self.legacy_dir = root / "embeddings"
+        with self._connect() as db:
+            db.execute("CREATE TABLE IF NOT EXISTS vectors (key TEXT PRIMARY KEY, vec BLOB NOT NULL)")
+
+    def _connect(self) -> sqlite3.Connection:
+        return sqlite3.connect(self.path, timeout=30)
+
+    def get_many(self, keys: List[str]) -> Dict[str, List[float]]:
+        found: Dict[str, List[float]] = {}
+        with self._connect() as db:
+            for i in range(0, len(keys), 900):  # SQLite caps bound variables
+                chunk = keys[i:i + 900]
+                rows = db.execute(f"SELECT key, vec FROM vectors WHERE key IN ({','.join('?' * len(chunk))})",
+                                  chunk).fetchall()
+                for key, blob in rows:
+                    found[key] = np.frombuffer(blob, dtype=np.float32).tolist()
+        migrated = {}
+        for key in keys:
+            if key not in found:
+                legacy = get_cache_path(self.legacy_dir, key)
+                if legacy.exists():
+                    try:
+                        migrated[key] = load_json(legacy)
+                    except Exception:
+                        continue
+        if migrated:
+            self.put_many(migrated)
+            found.update(migrated)
+        return found
+
+    def put_many(self, items: Dict[str, List[float]]) -> None:
+        with self._connect() as db:
+            db.executemany("INSERT OR REPLACE INTO vectors (key, vec) VALUES (?, ?)",
+                           [(key, np.asarray(vec, dtype=np.float32).tobytes()) for key, vec in items.items()])
 
 
 class EmbeddingPrefilter:
@@ -76,28 +122,12 @@ class EmbeddingPrefilter:
 
     def __init__(self, model: str = DEFAULT_EMBEDDING_MODEL, cache_dir: str = ".cache"):
         self.model = model or DEFAULT_EMBEDDING_MODEL
-        self.cache_dir = ensure_dir(cache_dir) / "embeddings"
-        ensure_dir(self.cache_dir)
+        self.store = EmbeddingStore(cache_dir)
         self.cost_tracker = get_cost_tracker()
 
     def _cache_key(self, text: str) -> str:
         # Key on (model, text) so switching embedding models never mixes vectors.
         return hash_text(f"{self.model}::{text}")
-
-    def _load_cached(self, text: str) -> Optional[List[float]]:
-        path = get_cache_path(self.cache_dir, self._cache_key(text))
-        if path.exists():
-            try:
-                return load_json(path)
-            except Exception:
-                return None
-        return None
-
-    def _save_cached(self, text: str, vector: List[float]):
-        try:
-            save_json(vector, get_cache_path(self.cache_dir, self._cache_key(text)))
-        except Exception as e:
-            print(f"Warning: failed to cache embedding: {e}")
 
     def _record_usage(self, response: Any):
         """Record embedding cost via OpenRouter's native usage accounting."""
@@ -187,7 +217,8 @@ class EmbeddingPrefilter:
     async def _embed_all(self, texts: List[str],
                          progress_callback: Optional[ProgressCallback] = None) -> List[List[float]]:
         """Embed texts, serving from disk cache where possible."""
-        results: List[Optional[List[float]]] = [self._load_cached(t) for t in texts]
+        cached = self.store.get_many([self._cache_key(t) for t in texts])
+        results: List[Optional[List[float]]] = [cached.get(self._cache_key(t)) for t in texts]
         uncached = [i for i, v in enumerate(results) if v is None]
         if progress_callback:
             # Cache hits count as instantly done (often the bulk on re-runs)
@@ -205,7 +236,7 @@ class EmbeddingPrefilter:
                 await client.close()
             for i, vec in zip(uncached, fresh):
                 results[i] = vec
-                self._save_cached(texts[i], vec)
+            self.store.put_many({self._cache_key(texts[i]): vec for i, vec in zip(uncached, fresh)})
         return results  # type: ignore[return-value]
 
     def rank_names(
@@ -227,15 +258,11 @@ class EmbeddingPrefilter:
 
         # One flat embed call: anchors first, then names.
         all_vectors = asyncio.run(self._embed_all(keywords + names, progress_callback))
-        anchor_vecs = all_vectors[:len(keywords)]
-        name_vecs = all_vectors[len(keywords):]
+        anchors = _unit_rows(all_vectors[:len(keywords)])
+        candidates = _unit_rows(all_vectors[len(keywords):])
+        pooled = softmax_pool(candidates @ anchors.T)
 
-        ranked: List[Tuple[str, float]] = []
-        for name, vec in zip(names, name_vecs):
-            sims = [_cosine(vec, a) for a in anchor_vecs]
-            ranked.append((name, _softmax_pool(sims)))
-
-        ranked.sort(key=lambda x: x[1], reverse=True)
+        ranked = sorted(zip(names, (float(s) for s in pooled)), key=lambda x: x[1], reverse=True)
         cost = self.cost_tracker.get_total_cost() - initial_cost
         return (ranked, cost)
 

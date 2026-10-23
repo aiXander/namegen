@@ -3,15 +3,20 @@ import math
 import random
 from bisect import bisect_right
 from itertools import accumulate
-from typing import List, Dict, Optional
-from collections import Counter, defaultdict
+from typing import List, Dict, Optional, Sequence
+from collections import defaultdict
 
 logger = logging.getLogger(__name__)
 
 class MarkovModel:
-    def __init__(self, data: List[str], order: int, temperature: float, alphabet: List[str]):
+    def __init__(self, data: List[str], order: int, temperature: float, alphabet: List[str],
+                 weights: Optional[Sequence[float]] = None):
+        """``weights`` (one per word, default 1.0) scale each word's n-gram
+        counts — used to balance word lists of very different sizes so a
+        40k-word list doesn't drown out a 100-word one."""
         assert alphabet is not None and data is not None
         assert len(alphabet) > 0 and len(data) > 0
+        assert weights is None or len(weights) == len(data)
         assert temperature >= 0, "Temperature must be non-negative (0 = deterministic argmax)"
 
         self.order = order
@@ -19,11 +24,15 @@ class MarkovModel:
         self.alphabet = alphabet
         self.char_index: Dict[str, int] = {c: i for i, c in enumerate(alphabet)}
 
-        self.observations: Dict[str, List[str]] = defaultdict(list)
+        # context -> {next char -> (weighted) count}
+        self.observations: Dict[str, Dict[str, float]] = defaultdict(lambda: defaultdict(float))
         self.chains: Dict[str, List[float]] = {}
         self.cumulative: Dict[str, List[float]] = {}
+        # Untempered transition probabilities (the training distribution), used
+        # to score how natural a finished name is independent of temperature.
+        self.probabilities: Dict[str, Dict[str, float]] = {}
 
-        self._train(data)
+        self._train(data, weights)
         self._build_chains()
 
     def generate(self, context: str) -> Optional[str]:
@@ -36,17 +45,20 @@ class MarkovModel:
         index = bisect_right(cumulative, rand)
         return self.alphabet[min(index, len(self.alphabet) - 1)]
 
-    def retrain(self, data: List[str]) -> None:
-        """Retrain model on new data"""
-        self.observations.clear()
-        self._train(data)
-        self._build_chains()
+    def probability(self, context: str, char: str) -> Optional[float]:
+        """Training-distribution P(char | context), or None if the context was
+        never observed (caller should back off to a lower order)."""
+        probs = self.probabilities.get(context)
+        if probs is None:
+            return None
+        return probs.get(char, 0.0)
 
-    def _train(self, data: List[str]) -> None:
+    def _train(self, data: List[str], weights: Optional[Sequence[float]] = None) -> None:
         """Train the model on training data"""
         logger.debug("Training Markov model (order=%d, temp=%.2f) on %d words", self.order, self.temperature, len(data))
 
-        for word in data:
+        for n, word in enumerate(data):
+            weight = 1.0 if weights is None else weights[n]
             # Add padding characters
             padded_word = "#" * self.order + word + "#"
 
@@ -54,7 +66,7 @@ class MarkovModel:
             for i in range(len(padded_word) - self.order):
                 key = padded_word[i:i + self.order]
                 value = padded_word[i + self.order]
-                self.observations[key].append(value)
+                self.observations[key][value] += weight
 
         logger.debug("Extracted %d unique n-gram contexts from training data", len(self.observations))
 
@@ -75,9 +87,10 @@ class MarkovModel:
         self.chains = {}
         self.cumulative = {}
 
-        for context, observed in self.observations.items():
-            counts = Counter(observed)
-            raw_counts = [counts.get(prediction, 0) for prediction in self.alphabet]
+        for context, counts in self.observations.items():
+            raw_counts = [counts.get(prediction, 0.0) for prediction in self.alphabet]
+            total_count = sum(raw_counts)
+            self.probabilities[context] = {char: count / total_count for char, count in counts.items()}
 
             if self.temperature == 0:
                 # Temperature 0: always pick most likely (argmax)

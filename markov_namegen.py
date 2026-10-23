@@ -3,7 +3,7 @@ import json
 import csv
 import yaml
 import random
-from typing import Iterable, List
+from typing import Dict, Iterable, List, Optional, Tuple
 from rapidfuzz import process as _rf_process
 from rapidfuzz.distance import Levenshtein
 from markov.name_generator import NameGenerator
@@ -41,45 +41,82 @@ def too_close_to_training(name: str, training_words: Iterable[str], min_distance
     ) is not None
 
 
+def nearest_training_word(name: str, training_words: Iterable[str]) -> Optional[Tuple[str, int]]:
+    """(closest training word, Levenshtein distance) — the name's provenance.
+    Multi-word names are matched on their longest word."""
+    probe = max(name.split(), key=len) if " " in name else name
+    match = _rf_process.extractOne(probe, training_words, scorer=Levenshtein.distance)
+    return (match[0], int(match[1])) if match else None
+
+
+# How word lists are mixed into one training set:
+#   natural  — every word counts once, so big lists dominate the statistics
+#   balanced — every selected list contributes the same total weight
+#   rating   — balanced, then scaled by the list's star rating (unrated = 3)
+WEIGHTING_MODES = ("natural", "balanced", "rating")
+UNRATED_LIST_STARS = 3
+
+
+def source_weights(sizes: Dict[str, int], mode: str,
+                   ratings: Optional[Dict[str, int]] = None) -> Dict[str, float]:
+    """Per-word weight for each source so the mix follows `mode`. Weights are
+    normalised so the total mass equals the natural word count — temperature
+    and backoff then behave the same in every mode."""
+    sizes = {source: n for source, n in sizes.items() if n > 0}
+    if mode not in ("balanced", "rating") or not sizes:
+        return {source: 1.0 for source in sizes}
+    ratings = ratings or {}
+    share = {source: float(ratings.get(source) or UNRATED_LIST_STARS) if mode == "rating" else 1.0
+             for source in sizes}
+    total_words = sum(sizes.values())
+    total_share = sum(share.values())
+    return {source: total_words * share[source] / total_share / sizes[source] for source in sizes}
+
+
 class MarkovNameGenerator:
-    def __init__(self, config_path: str = "config.yaml"):
-        """Initialize the generator with configuration"""
-        with open(config_path, 'r') as f:
-            self.config = yaml.safe_load(f)
-        
-        # Load training data
-        self.training_words = self._load_training_data()
-        
-        # Create name generator
+    def __init__(self, config_path: str = "config.yaml", config: Optional[dict] = None):
+        """Train a generator from a config dict, or from the YAML at config_path."""
+        if config is None:
+            with open(config_path, 'r') as f:
+                config = yaml.safe_load(f)
+        self.config = config
+        self.build()
+
+    def build(self) -> None:
+        """(Re)load the training data and train the model from self.config."""
+        self.training_words, weights = self._load_training_data()
         model_config = self.config['model']
         self.generator = NameGenerator(
             data=self.training_words,
             order=model_config['order'],
             temperature=model_config['temperature'],
-            backoff=model_config['backoff']
+            backoff=model_config['backoff'],
+            weights=weights
         )
-    
-    def _load_training_data(self) -> List[str]:
-        """Load training data from specified sources"""
-        words = []
-        sources = self.config['training_data']['sources']
-        filter_special_chars = self.config['training_data'].get('filter_special_chars', True)
-        
-        for source in sources:
+
+    def _load_training_data(self) -> Tuple[List[str], List[float]]:
+        """Load training words from the configured sources, plus a per-word
+        weight implementing `training_data.weighting`."""
+        training_config = self.config['training_data']
+        filter_special_chars = training_config.get('filter_special_chars', True)
+
+        per_source: Dict[str, List[str]] = {}
+        for source in training_config['sources']:
             filepath = os.path.join(WORD_LISTS_DIR, source)
-            if os.path.exists(filepath):
-                words.extend(load_word_list(filepath))
-            else:
+            if not os.path.exists(filepath):
                 print(f"Warning: Word list {source} not found")
-        
-        # Filter out words with special characters if enabled
-        if filter_special_chars:
-            words = [word for word in words if word.isalpha()]
-        
-        # Ensure all training data is lowercase
-        words = [word.lower() for word in words]
-        
-        return words
+                continue
+            words = load_word_list(filepath)
+            if filter_special_chars:
+                words = [word for word in words if word.isalpha()]
+            per_source[source] = words
+
+        weight_of = source_weights({source: len(words) for source, words in per_source.items()},
+                                   training_config.get('weighting', 'natural'),
+                                   self.config.get('word_list_ratings'))
+        words = [word for source_words in per_source.values() for word in source_words]
+        weights = [weight_of[source] for source, source_words in per_source.items() for _ in source_words]
+        return words, weights
     
     def generate_names(self) -> List[str]:
         """Generate names according to configuration"""

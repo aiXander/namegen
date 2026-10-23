@@ -92,6 +92,36 @@ def main():
         check(f"{kwargs}", len(produced) > 0 and not bad,
               f"{len(produced)} produced, violations: {bad[:5]}")
 
+    print("\nMulti-word mode — a space in `includes` splits into words (1000 attempts each):")
+    # The output must contain exactly one space, no empty word, and still
+    # honour the other constraints over the whole joined string.
+    word_cases = [
+        {"includes": " ", "min_length": 5, "max_length": 9},
+        {"includes": " ", "ends_with": "a", "min_length": 5, "max_length": 10},
+        {"includes": "co ", "ends_with": "a", "min_length": 5, "max_length": 11},
+        {"includes": " ;co", "ends_with": "a", "min_length": 5, "max_length": 11},  # the reported case
+        {"includes": " ", "starts_with": "lu", "min_length": 6, "max_length": 12},
+        # stray quotes copied from the GUI examples must not break matching
+        {"includes": "'co, '", "ends_with": "a", "min_length": 5, "max_length": 11},
+    ]
+    for kwargs in word_cases:
+        produced = []
+        for _ in range(1000):
+            name = gen.generate_name(**kwargs)
+            if name:
+                produced.append(name)
+        includes_clean = kwargs.get("includes", "").replace(" ", "")
+        bad = [n for n in produced if not (
+            kwargs["min_length"] <= len(n) <= kwargs["max_length"]
+            and n.count(" ") == 1
+            and all(w for w in n.split(" "))
+            and n.startswith(kwargs.get("starts_with", ""))
+            and n.endswith(kwargs.get("ends_with", ""))
+            and (not includes_clean or meets_includes_constraint(n, includes_clean))
+        )]
+        check(f"{kwargs}", len(produced) > 0 and not bad,
+              f"{len(produced)} produced, violations: {bad[:5]}")
+
     print("\nInfeasible constraints fail fast (and return empty, not hang):")
     infeasible = [
         {"min_length": 10, "max_length": 5},

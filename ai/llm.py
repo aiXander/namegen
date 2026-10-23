@@ -27,7 +27,15 @@ load_dotenv()  # also pick up a .env in the current working directory / shell en
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 
 # Default model, used as fallback when none is specified in config / request.
-DEFAULT_MODEL = "google/gemini-3.1-flash-lite-preview"
+# Must be routable under the account's zero-data-retention setting (the old
+# google/gemini-3.1-flash-lite-preview default is not, and 404s).
+DEFAULT_MODEL = "anthropic/claude-haiku-5.5"
+
+# Some endpoints reject reasoning effort "none" ("Reasoning is mandatory for
+# this endpoint"). On that error the call is retried at this effort, and the
+# model is remembered so later calls skip the failed attempt.
+MANDATORY_REASONING_FALLBACK = "low"
+_reasoning_mandatory_models: set = set()
 
 # Optional attribution headers shown on OpenRouter dashboards (harmless to keep).
 _DEFAULT_HEADERS = {
@@ -304,17 +312,20 @@ class LLMWrapper:
         retry_delay_base: float = 1.0,
         verbosity: int = 0,
         print_reasoning_summary: bool = False,
-        progress_callback: Optional[Callable[[int, int], None]] = None
+        progress_callback: Optional[Callable[[int, int], None]] = None,
+        system_prompt: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """
-        Process multiple prompts in parallel batches with retry handling.
+        Process multiple prompts concurrently with retry handling.
 
         Args:
             prompts: List of prompts to process
-            model: OpenRouter model name (e.g., "google/gemini-3.1-flash-lite-preview")
+            model: OpenRouter model name (e.g., "anthropic/claude-haiku-5.5")
             cache_keys: Optional list of cache keys (if None, no caching)
             schema_hints: Optional list of schema hints
-            batch_size: Maximum number of concurrent requests
+            batch_size: Maximum number of requests in flight at once (a
+                sliding window — a slow request never stalls the others)
+            system_prompt: Optional system message shared by every prompt
             max_retries: Maximum retries for transient errors
             retry_delay_base: Base delay for exponential backoff
             progress_callback: Optional (done, total) hook, called as each
@@ -335,7 +346,7 @@ class LLMWrapper:
         cache_keys = cache_keys or [None] * n_prompts
         schema_hints = schema_hints or [None] * n_prompts
 
-        print(f"Processing {n_prompts} prompts in batches of {batch_size}")
+        print(f"Processing {n_prompts} prompts with {model} (up to {batch_size} in flight)")
 
         # Check cache first and prepare uncached tasks
         results = [None] * n_prompts
@@ -366,54 +377,42 @@ class LLMWrapper:
         # Open one async client for this run (bound to the current event loop)
         # and close it when done — see make_async_openrouter_client.
         self._async_client = make_async_openrouter_client()
+        semaphore = asyncio.Semaphore(max(1, batch_size))
+
+        # Each task reports progress as it finishes (also on failure — the
+        # finally guarantees the counter reaches total even when calls error)
+        async def run_one(i: int):
+            nonlocal completed
+            try:
+                async with semaphore:
+                    return await self._async_json_complete_with_retry(
+                        prompt=prompts[i],
+                        model=model,
+                        cache_key=cache_keys[i],
+                        schema_hint=schema_hints[i],
+                        max_retries=max_retries,
+                        retry_delay_base=retry_delay_base,
+                        reasoning_effort=reasoning_effort,
+                        verbosity=verbosity,
+                        print_reasoning_summary=print_reasoning_summary,
+                        system_prompt=system_prompt,
+                    )
+            finally:
+                completed += 1
+                if progress_callback:
+                    progress_callback(completed, n_prompts)
+
         try:
-            # Process uncached prompts in batches
-            for batch_start in range(0, len(uncached_indices), batch_size):
-                batch_end = min(batch_start + batch_size, len(uncached_indices))
-                batch_indices = uncached_indices[batch_start:batch_end]
-
-                print(f"Processing batch {batch_start//batch_size + 1}: items {batch_start + 1}-{batch_end} of {len(uncached_indices)} uncached")
-
-                # Create tasks for this batch; each reports progress as it
-                # finishes (also on failure — the finally guarantees the
-                # counter reaches total even when chunks error out)
-                async def run_one(i: int):
-                    nonlocal completed
-                    try:
-                        return await self._async_json_complete_with_retry(
-                            prompt=prompts[i],
-                            model=model,
-                            cache_key=cache_keys[i],
-                            schema_hint=schema_hints[i],
-                            max_retries=max_retries,
-                            retry_delay_base=retry_delay_base,
-                            reasoning_effort=reasoning_effort,
-                            verbosity=verbosity,
-                            print_reasoning_summary=print_reasoning_summary
-                        )
-                    finally:
-                        completed += 1
-                        if progress_callback:
-                            progress_callback(completed, n_prompts)
-
-                tasks = [asyncio.create_task(run_one(i)) for i in batch_indices]
-
-                # Execute batch
-                batch_results = await asyncio.gather(*tasks, return_exceptions=True)
-
-                # Store results, handling exceptions
-                for i, result in zip(batch_indices, batch_results):
-                    if isinstance(result, Exception):
-                        print(f"Task failed for prompt {i}: {result}")
-                        results[i] = result  # Keep exception in results for caller to handle
-                    else:
-                        results[i] = result
+            outcomes = await asyncio.gather(*(run_one(i) for i in uncached_indices), return_exceptions=True)
+            for i, result in zip(uncached_indices, outcomes):
+                if isinstance(result, Exception):
+                    print(f"Task failed for prompt {i}: {result}")
+                results[i] = result  # exceptions are kept for the caller to handle
         finally:
             await self._async_client.close()
             self._async_client = None
 
         print(f"Completed processing all {n_prompts} prompts")
-        await cleanup_background_tasks()
         return results
 
     async def _async_json_complete_with_retry(
@@ -426,7 +425,8 @@ class LLMWrapper:
         retry_delay_base: float = 1.0,
         reasoning_effort: Optional[str] = None,
         verbosity: int = 0,
-        print_reasoning_summary: bool = False
+        print_reasoning_summary: bool = False,
+        system_prompt: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Single async JSON completion with retry logic."""
         # Check cache first
@@ -439,6 +439,10 @@ class LLMWrapper:
                     print(f"Warning: Failed to load cache {cache_path}: {e}")
 
         json_prompt = self._prepare_json_prompt(prompt, schema_hint)
+        messages = [{"role": "user", "content": json_prompt}]
+        if system_prompt:
+            messages.insert(0, {"role": "system", "content": system_prompt})
+        effort = reasoning_effort if reasoning_effort is not None else self.reasoning_effort
 
         for attempt in range(max_retries + 1):
             try:
@@ -451,11 +455,13 @@ class LLMWrapper:
                 if self.json_mode:
                     call_kwargs["response_format"] = {"type": "json_object"}
 
+                if effort == "none" and model in _reasoning_mandatory_models:
+                    effort = MANDATORY_REASONING_FALLBACK
                 response = await async_chat_completion(
                     self._async_client,
-                    messages=[{"role": "user", "content": json_prompt}],
+                    messages=messages,
                     model=model,
-                    reasoning_effort=reasoning_effort if reasoning_effort is not None else self.reasoning_effort,
+                    reasoning_effort=effort,
                     **call_kwargs,
                 )
 
@@ -495,6 +501,11 @@ class LLMWrapper:
                 if self.json_mode and "response_format" in str(e).lower():
                     print(f"⚠️  Provider rejected JSON mode (response_format); disabling for this run: {e}")
                     self.json_mode = False
+                    retryable = True
+                elif effort == "none" and "reasoning is mandatory" in str(e).lower():
+                    print(f"⚠️  {model} requires reasoning; retrying at effort={MANDATORY_REASONING_FALLBACK}")
+                    _reasoning_mandatory_models.add(model)
+                    effort = MANDATORY_REASONING_FALLBACK
                     retryable = True
                 else:
                     retryable = self._is_retryable_error(e)
@@ -549,16 +560,3 @@ class LLMWrapper:
             "connection", "connection error", "connection reset", "temporarily",
         ]
         return any(indicator in error_str for indicator in transient_indicators)
-
-
-async def cleanup_background_tasks():
-    """Cancel any lingering background tasks to ensure clean exit."""
-    pending = asyncio.all_tasks()
-    current = asyncio.current_task()
-    background_tasks = [task for task in pending if task != current and not task.done()]
-
-    if background_tasks:
-        print(f"Cleaning up {len(background_tasks)} background tasks")
-        for task in background_tasks:
-            task.cancel()
-        await asyncio.sleep(0.1)  # Give tasks time to cancel

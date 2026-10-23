@@ -25,13 +25,13 @@ export interface WordListContent {
   total_count: number;
 }
 
+export type Weighting = 'natural' | 'balanced' | 'rating';
+
 export interface Config {
   training_data?: {
     sources: string[];
-    score_range?: {
-      min: number;
-      max: number;
-    };
+    weighting?: Weighting;
+    score_range?: { min: number; max: number };
   };
   model?: {
     order: number;
@@ -52,104 +52,174 @@ export interface Config {
     component_order?: number[];
     component_separation?: [number, number];
   };
+  filtering?: {
+    remove_duplicates?: boolean;
+    exclude_training_words?: boolean;
+    min_edit_distance?: number;
+  };
   llm?: {
-    model?: string;
-    max_chunk_size?: number;
-    default_instructions?: string;
     description?: string;
     keywords?: string;
+    guidance?: string;
+    judges?: string[];
+    final_model?: string;
+    final_size?: number;
+    chunk_size?: number;
     embedding_model?: string;
     min_similarity?: number;
+    available_models?: string[];
   };
   ai_settings?: {
     max_names?: number;
   };
   word_list_ratings?: Record<string, number>;
-  saved_ratings?: Record<string, number>;
+  [key: string]: any;
 }
 
-export interface GenerationResult {
-  names: string[];
-  count: number;
-}
-
-export interface ScoredName {
+/** A generated name plus the free local metrics computed while sampling. */
+export interface NameRow {
   name: string;
-  score?: number;
-  similarity?: number;
+  /** 0-100 percentile of per-letter likelihood among the model's own fluent samples */
+  naturalness?: number;
+  /** closest training word and its edit distance — where the name came from */
+  nearest?: string | null;
+  distance?: number | null;
+}
+
+export interface GenerationStats {
+  attempts: number;
+  accepted: number;
+  failed: number;
+  duplicate: number;
+  training_word: number;
+  too_similar: number;
+  elapsed: number;
+}
+
+/** One name's verdict from the judge panel (all scores 0-10, means over judges). */
+export interface Verdict {
+  name: string;
+  score: number | null;
+  sound: number | null;
+  fit: number | null;
+  distinct: number | null;
+  note: string;
+  notes: Record<string, string>;
+  flag: string;
+  judges: Record<string, number | null>;
+}
+
+export interface FinalEntry {
+  name: string;
+  rank: number;
+  pitch: string;
+  concern: string;
 }
 
 export interface PrefilterInfo {
-  keywords: string[];
   total: number;
   kept: number;
-  dropped: number;
-  min_similarity?: number;
-  embedding_model: string;
-  cost: number;
+  min_similarity: number;
 }
 
-export interface AIScoringResult {
-  scored_names: ScoredName[];
+export interface JudgeResult {
+  verdicts: Verdict[];
+  similarities: Record<string, number>;
   prefilter: PrefilterInfo | null;
-  total_cost: number;
+  judges: string[];
+  cost: { embedding: number; judging: number; total: number };
 }
 
-export interface AIScoringRequest {
+export interface JudgeRequest {
   names: string[];
   description: string;
-  instructions: string;
-  model: string;
-  max_chunk_size: number;
-  keywords?: string;
-  prefilter_keep?: number;
+  keywords: string;
+  guidance: string;
+  judges: string[];
+  chunk_size: number;
+  prefilter_keep: number;
   embedding_model?: string;
   min_similarity?: number;
 }
 
-export interface EmbedRankRequest {
-  names: string[];
-  keywords: string;
-  embedding_model?: string;
+export interface ModelInfo {
+  id: string;
+  /** USD per million tokens */
+  price?: { prompt: number; completion: number };
 }
 
-export interface EmbedRankResult {
-  ranked: { name: string; similarity: number }[];
-  total: number;
-  embedding_model: string;
-  cost: number;
+export interface ModelsResponse {
+  models: ModelInfo[];
+  default_judges: string[];
+  default_final_model: string;
 }
 
-export interface AIModelsResponse {
-  models: string[];
+/** POST to an SSE endpoint; forwards intermediate events to onEvent,
+ *  resolves with the `complete` event, throws on `error` events. */
+export async function streamSSE(
+  path: string,
+  body: any,
+  onEvent: (event: any) => void,
+  signal?: AbortSignal
+): Promise<any> {
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+    signal
+  });
+  if (!response.ok || !response.body) {
+    throw new Error(`Request failed (HTTP ${response.status}) — is the API server running on :5001?`);
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  // Buffer partial chunks so SSE events split across reads aren't dropped
+  let buffer = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop() || '';
+
+    for (const line of lines) {
+      if (!line.startsWith('data: ')) continue;
+      const event = JSON.parse(line.slice(6));
+      if (event.type === 'complete') return event;
+      if (event.type === 'error') throw new Error(event.message || 'Request failed');
+      onEvent(event);
+    }
+  }
+  throw new Error('Stream ended without a result');
+}
+
+/** Pull a readable message out of an axios / fetch error. */
+export function errorMessage(err: any, fallback: string): string {
+  return err?.response?.data?.error || err?.message || fallback;
 }
 
 class ApiService {
-  private baseURL: string;
+  private baseURL = API_BASE_URL;
 
-  constructor() {
-    this.baseURL = API_BASE_URL;
-  }
-
-  // Word Lists
+  // Word lists
   async getWordLists(): Promise<WordList[]> {
-    const response = await axios.get(`${this.baseURL}/word-lists`);
-    return response.data;
+    return (await axios.get(`${this.baseURL}/word-lists`)).data;
   }
 
   async getWordListContent(filename: string): Promise<WordListContent> {
-    const response = await axios.get(`${this.baseURL}/word-lists/${filename}`);
-    return response.data;
+    return (await axios.get(`${this.baseURL}/word-lists/${encodeURIComponent(filename)}`)).data;
   }
 
   async rateWordList(filename: string, rating: number): Promise<void> {
-    await axios.post(`${this.baseURL}/word-lists/${filename}/rate`, { rating });
+    await axios.post(`${this.baseURL}/word-lists/${encodeURIComponent(filename)}/rate`, { rating });
   }
 
   // Configuration
   async getConfig(): Promise<Config> {
-    const response = await axios.get(`${this.baseURL}/config`);
-    return response.data;
+    return (await axios.get(`${this.baseURL}/config`)).data;
   }
 
   async updateConfig(config: Config): Promise<void> {
@@ -161,115 +231,78 @@ class ApiService {
   }
 
   async getAvailableConfigs(): Promise<string[]> {
-    const response = await axios.get(`${this.baseURL}/config/list`);
-    return response.data.configs;
+    return (await axios.get(`${this.baseURL}/config/list`)).data.configs;
   }
 
   async loadConfigFrom(filename: string): Promise<Config> {
-    const response = await axios.get(`${this.baseURL}/config/load/${filename}`);
-    return response.data;
+    return (await axios.get(`${this.baseURL}/config/load/${encodeURIComponent(filename)}`)).data;
   }
 
-
-  // Ratings
+  // Ratings (the shortlist). Rating 0 removes the name.
   async getRatings(): Promise<Record<string, number>> {
-    const response = await axios.get(`${this.baseURL}/ratings`);
-    return response.data;
+    return (await axios.get(`${this.baseURL}/ratings`)).data;
   }
 
   async rateName(name: string, rating: number): Promise<void> {
-    await axios.post(`${this.baseURL}/ratings/${name}`, { rating });
+    await axios.post(`${this.baseURL}/ratings`, { name, rating });
   }
 
-  async deleteRating(name: string): Promise<void> {
-    await axios.delete(`${this.baseURL}/ratings/${name}`);
+  async renameRating(oldName: string, newName: string): Promise<void> {
+    await axios.post(`${this.baseURL}/ratings/rename`, { old: oldName, new: newName });
   }
 
   async clearAllRatings(): Promise<void> {
     await axios.delete(`${this.baseURL}/ratings`);
   }
 
-  // AI Scoring
-  async scoreNamesWithAI(request: AIScoringRequest): Promise<AIScoringResult> {
-    const response = await axios.post(`${this.baseURL}/ai/score`, request);
-    return response.data;
-  }
-
-  async embedRankNames(request: EmbedRankRequest): Promise<EmbedRankResult> {
-    const response = await axios.post(`${this.baseURL}/ai/embed-rank`, request);
-    return response.data;
-  }
-
-  /** POST to an SSE endpoint; forwards intermediate events to onEvent,
-   *  resolves with the `complete` event, throws on `error` events. */
-  private async streamSSE(
-    path: string,
-    body: any,
-    onEvent: (event: any) => void
-  ): Promise<any> {
-    const response = await fetch(`${this.baseURL}${path}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body)
-    });
-    if (!response.ok || !response.body) {
-      throw new Error(`Request failed (HTTP ${response.status})`);
-    }
-
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    // Buffer partial chunks so SSE events split across reads aren't dropped
-    let buffer = '';
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop() || '';
-
-      for (const line of lines) {
-        if (!line.startsWith('data: ')) continue;
-        const event = JSON.parse(line.slice(6));
-        if (event.type === 'complete') {
-          return event;
-        } else if (event.type === 'error') {
-          throw new Error(event.message || 'Request failed');
-        } else {
-          onEvent(event);
-        }
+  // Generation
+  generateStream(
+    config: Config,
+    onName: (row: NameRow) => void,
+    signal?: AbortSignal
+  ): Promise<{ stats: GenerationStats }> {
+    return streamSSE('/generate-stream', config, (event) => {
+      if (event.type === 'name') {
+        const { type, ...row } = event;
+        onName(row);
       }
-    }
-    throw new Error('Stream ended without a result');
+    }, signal);
   }
 
-  /** Streaming variant of embedRankNames: reports embedding progress via
-   *  onProgress(done, total) as batches complete, resolves with the result. */
-  async embedRankNamesStream(
-    request: EmbedRankRequest,
+  // AI
+  embedRankStream(
+    request: { names: string[]; keywords: string; embedding_model?: string },
     onProgress: (done: number, total: number) => void
-  ): Promise<EmbedRankResult> {
-    return this.streamSSE('/ai/embed-rank-stream', request, (event) => {
+  ): Promise<{ ranked: { name: string; similarity: number }[]; cost: number }> {
+    return streamSSE('/ai/embed-rank-stream', request, (event) => {
       if (event.type === 'progress') onProgress(event.done, event.total);
     });
   }
 
-  /** Streaming variant of scoreNamesWithAI: reports two-phase progress —
-   *  'embedding' (prefilter texts) then 'scoring' (completed LLM chunks). */
-  async scoreNamesWithAIStream(
-    request: AIScoringRequest,
-    onProgress: (phase: 'embedding' | 'scoring', done: number, total: number) => void
-  ): Promise<AIScoringResult> {
-    return this.streamSSE('/ai/score-stream', request, (event) => {
+  /** Vibe prefilter (when keywords are set) then the judge panel; reports
+   *  'embedding' progress (texts) then 'judging' progress (LLM chunks). */
+  judgeStream(
+    request: JudgeRequest,
+    onProgress: (phase: 'embedding' | 'judging', done: number, total: number) => void
+  ): Promise<JudgeResult> {
+    return streamSSE('/ai/judge-stream', request, (event) => {
       if (event.type === 'embed_progress') onProgress('embedding', event.done, event.total);
-      else if (event.type === 'score_progress') onProgress('scoring', event.done, event.total);
+      else if (event.type === 'judge_progress') onProgress('judging', event.done, event.total);
     });
   }
 
-  async getAIModels(): Promise<AIModelsResponse> {
-    const response = await axios.get(`${this.baseURL}/ai/models`);
-    return response.data;
+  async finalRound(request: {
+    names: string[];
+    description: string;
+    keywords: string;
+    guidance: string;
+    model: string;
+  }): Promise<{ ranking: FinalEntry[]; model: string; cost: number }> {
+    return (await axios.post(`${this.baseURL}/ai/final-round`, request)).data;
+  }
+
+  async getModels(): Promise<ModelsResponse> {
+    return (await axios.get(`${this.baseURL}/ai/models`)).data;
   }
 }
 

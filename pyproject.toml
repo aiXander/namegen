@@ -11,6 +11,7 @@ dependencies = [
     "python-dotenv>=1.2.2",
     "wordninja>=2.0.0",
     "rapidfuzz>=3.14.5",
+    "numpy>=2.2.6",
 ]
 
 [tool.ruff]

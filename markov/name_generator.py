@@ -1,13 +1,20 @@
 import time
 import re
-from typing import List, Optional, Tuple
+import random
+from bisect import bisect_left
+from typing import List, Optional, Sequence, Tuple
 from .generator import Generator
 from .constraint_sampler import (GenerationConstraints, meets_includes_constraint,
                                  parse_excludes_tokens)
 
 
+# Novel reference names sampled to calibrate the naturalness percentile.
+NATURALNESS_SAMPLE = 1000
+
+
 class NameGenerator:
-    def __init__(self, data: List[str], order: int, temperature: float, backoff: bool = False):
+    def __init__(self, data: List[str], order: int, temperature: float, backoff: bool = False,
+                 weights: Optional[Sequence[float]] = None):
         """
         Create a procedural name generator.
         
@@ -16,8 +23,51 @@ class NameGenerator:
             order: Highest order of model to use - models 1 to order will be generated
             temperature: Temperature for sampling (0=deterministic, 1=training distribution, >1=more random)
             backoff: Whether to fall back to lower order models when highest order model fails
+            weights: Optional per-word training weight (see MarkovModel)
         """
-        self.generator = Generator(data, order, temperature, backoff)
+        self.generator = Generator(data, order, temperature, backoff, weights)
+        # Reference distribution for naturalness(): log-likelihoods of novel
+        # names sampled at temperature 1. (Scoring against the training words
+        # themselves doesn't work — they're in-sample, so every novel name
+        # would rank near 0.)
+        self._reference = sorted(self.generator.log_likelihood(name)
+                                 for name in self._reference_names(set(data)))
+
+    def _reference_names(self, training: set) -> List[str]:
+        """Sample novel names from the untempered training distribution."""
+        rng = random.Random(0)
+        names: List[str] = []
+        for _ in range(NATURALNESS_SAMPLE * 5):
+            word = ""
+            while len(word) < 20:
+                history = "#" * self.generator.order + word
+                for model in self.generator.models:
+                    probs = model.probabilities.get(history[-model.order:])
+                    if probs:
+                        break
+                if not probs:
+                    break
+                char = rng.choices(list(probs), weights=list(probs.values()))[0]
+                if char == "#":
+                    break
+                word += char
+            if len(word) >= 3 and word not in training:
+                names.append(word)
+                if len(names) >= NATURALNESS_SAMPLE:
+                    break
+        return names or [""]
+
+    def naturalness(self, name: str) -> int:
+        """0-100 percentile of this name's per-character likelihood among novel
+        names the model produces at temperature 1. ~50 = a typical, fluent
+        sample; low = odd letter combos that only high temperature or forced
+        constraints/components could produce."""
+        # In multi-word names, skip 1-2 letter fragments ("co murma"): they are
+        # usually forced by constraints, and the reference has no words that short.
+        words = name.lower().split()
+        scored = " ".join(w for w in words if len(w) >= 3) or name.lower()
+        ll = self.generator.log_likelihood(scored)
+        return round(100 * bisect_left(self._reference, ll) / len(self._reference))
     
     def generate_name(self, min_length: int = 1, max_length: int = 20, 
                      starts_with: str = "", ends_with: str = "", 
@@ -38,6 +88,22 @@ class NameGenerator:
         Returns:
             A word that meets constraints, or None if generated word doesn't meet constraints
         """
+        # A space in `includes` means "split into separate words". Only the
+        # component sampler can emit a literal space (the model's alphabet has
+        # none), so route there — and skip the single-word fallback below, which
+        # could never produce the space.
+        if " " in includes:
+            return self.generate_name_with_components(
+                components=[],
+                min_length=min_length,
+                max_length=max_length,
+                starts_with=starts_with,
+                ends_with=ends_with,
+                includes=includes,
+                excludes=excludes,
+                regex_pattern=regex_pattern,
+            )
+
         # Try new constraint-integrated approach first
         name = self.generator.generate_with_constraints(
             min_length=min_length,
